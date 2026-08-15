@@ -19,7 +19,7 @@ class GeneratedProjectTest extends TestCase
     {
         Bus::fake();
 
-        $user = User::factory()->create();
+        $user = $this->createUser();
 
         $response = $this
             ->actingAs($user)
@@ -64,8 +64,8 @@ DSL,
 
     public function test_authenticated_user_can_view_their_generated_projects(): void
     {
-        $user = User::factory()->create();
-        $otherUser = User::factory()->create();
+        $user = $this->createUser();
+        $otherUser = $this->createUser();
 
         GeneratedProject::query()->create([
             'user_id' => $user->id,
@@ -90,7 +90,7 @@ DSL,
 
     public function test_authenticated_user_can_open_project_for_editing(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createUser();
         $project = GeneratedProject::query()->create([
             'user_id' => $user->id,
             'uuid' => '33333333-3333-3333-3333-333333333333',
@@ -117,7 +117,7 @@ DSL,
     {
         Bus::fake();
 
-        $user = User::factory()->create();
+        $user = $this->createUser();
         $project = GeneratedProject::query()->create([
             'user_id' => $user->id,
             'uuid' => '44444444-4444-4444-4444-444444444444',
@@ -164,7 +164,7 @@ DSL,
     {
         Bus::fake();
 
-        $user = User::factory()->create();
+        $user = $this->createUser();
         $project = GeneratedProject::query()->create([
             'user_id' => $user->id,
             'uuid' => '55555555-5555-5555-5555-555555555555',
