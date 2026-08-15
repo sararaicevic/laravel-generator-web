@@ -100,7 +100,6 @@ class LaravelProjectGenerator
             'app/Http/Controllers/Controller.php',
             'app/Models/User.php',
             'app/Providers/AppServiceProvider.php',
-            'database/factories/UserFactory.php',
             'database/seeders/DatabaseSeeder.php',
             'public/.htaccess',
             'public/favicon.ico',
@@ -169,7 +168,6 @@ class LaravelProjectGenerator
                 'laravel/tinker' => '^3.0',
             ],
             'require-dev' => [
-                'fakerphp/faker' => '^1.23',
                 'laravel/breeze' => '^2.4',
                 'laravel/pail' => '^1.2.5',
                 'laravel/pint' => '^1.27',
@@ -180,7 +178,6 @@ class LaravelProjectGenerator
             'autoload' => [
                 'psr-4' => [
                     'App\\' => 'app/',
-                    'Database\\Factories\\' => 'database/factories/',
                     'Database\\Seeders\\' => 'database/seeders/',
                 ],
             ],
