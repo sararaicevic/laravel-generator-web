@@ -204,6 +204,63 @@
                                         </template>
                                     </div>
                                 </div>
+
+                                <div class="p-5">
+                                    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <h3 class="font-semibold text-zinc-50">Relacije</h3>
+                                            <p class="text-xs text-zinc-500">Poveži modele kroz belongsTo i hasMany odnose.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            class="ui-button-secondary px-3 py-2"
+                                            :disabled="availableRelationTargets.length === 0"
+                                            @click="addRelation(selectedEntity)"
+                                        >
+                                            Dodaj relaciju
+                                        </button>
+                                    </div>
+
+                                    <template x-if="availableRelationTargets.length === 0">
+                                        <div class="rounded-md border border-dashed border-white/15 px-4 py-5 text-sm text-zinc-500">
+                                            Za relaciju su potrebna najmanje dva imenovana modela.
+                                        </div>
+                                    </template>
+
+                                    <div class="space-y-3" x-show="selectedEntity.relations.length > 0">
+                                        <template x-for="(relation, relationIndex) in selectedEntity.relations" :key="relationIndex">
+                                            <div class="grid gap-3 rounded-md border border-white/10 p-4 md:grid-cols-[180px_minmax(180px,1fr)_44px] md:items-center">
+                                                <div>
+                                                    <label class="mb-1 block text-xs font-medium text-zinc-500">Tip relacije</label>
+                                                    <select class="ui-select block w-full text-sm" x-model="relation.type">
+                                                        <template x-for="type in relationTypes" :key="type">
+                                                            <option :value="type" x-text="type"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+
+                                                <div>
+                                                    <label class="mb-1 block text-xs font-medium text-zinc-500">Ciljni model</label>
+                                                    <select class="ui-select block w-full text-sm" x-model="relation.target">
+                                                        <option value="">Izaberi model</option>
+                                                        <template x-for="target in availableRelationTargets" :key="target.name">
+                                                            <option :value="target.name" x-text="target.name"></option>
+                                                        </template>
+                                                    </select>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-400/30 bg-red-500/10 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 md:mt-5"
+                                                    title="Ukloni relaciju"
+                                                    @click="removeRelation(selectedEntity, relationIndex)"
+                                                >
+                                                    X
+                                                </button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
                             </div>
                         </template>
                     </section>

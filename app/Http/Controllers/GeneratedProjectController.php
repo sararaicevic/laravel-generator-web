@@ -64,7 +64,7 @@ class GeneratedProjectController extends Controller
     public function edit(GeneratedProject $project)
     {
         $this->authorizeOwner($project);
-        $project->load('entities.fields');
+        $project->load('entities.fields', 'entities.relations');
 
         return view('generator.create', [
             'project' => $project,
@@ -104,9 +104,23 @@ class GeneratedProjectController extends Controller
     public function show(GeneratedProject $project)
     {
         $this->authorizeOwner($project);
-        $project->load('entities.fields');
+        $project->load('entities.fields', 'entities.relations');
 
         return view('generator.show', ['project' => $project]);
+    }
+
+    public function status(GeneratedProject $project)
+    {
+        $this->authorizeOwner($project);
+        $project->refresh();
+
+        return response()->json([
+            'status' => $project->status,
+            'error_message' => $project->error_message,
+            'download_url' => $project->status === 'succeeded' && $project->zip_path
+                ? route('generator.download', $project)
+                : null,
+        ]);
     }
 
     public function rerun(GeneratedProject $project)
@@ -206,6 +220,13 @@ class GeneratedProjectController extends Controller
                     'is_unique' => $fieldSpec['unique'],
                 ]);
             }
+
+            foreach ($entitySpec['relations'] as $relationSpec) {
+                $entity->relations()->create([
+                    'type' => $relationSpec['type'],
+                    'target' => $relationSpec['target'],
+                ]);
+            }
         }
     }
 
@@ -251,6 +272,13 @@ class GeneratedProjectController extends Controller
                         'required' => (bool) $field->is_required,
                         'nullable' => !(bool) $field->is_required,
                         'unique' => (bool) $field->is_unique,
+                    ])
+                    ->values()
+                    ->all(),
+                'relations' => $entity->relations
+                    ->map(fn ($relation): array => [
+                        'type' => $relation->type,
+                        'target' => $relation->target,
                     ])
                     ->values()
                     ->all(),

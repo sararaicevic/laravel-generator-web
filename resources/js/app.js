@@ -3,14 +3,29 @@
 import Alpine from 'alpinejs';
 
 window.generatorBuilder = function generatorBuilder(config = {}) {
+    const normalizeEntities = (entities) => entities.map((entity) => ({
+        name: entity.name || '',
+        fields: Array.isArray(entity.fields) ? entity.fields : [],
+        relations: Array.isArray(entity.relations) ? entity.relations : [],
+    }));
+
     return {
         projectName: config.projectName || '',
         selectedEntityIndex: Array.isArray(config.entities) && config.entities.length > 0 ? 0 : null,
-        entities: Array.isArray(config.entities) ? config.entities : [],
+        entities: Array.isArray(config.entities) ? normalizeEntities(config.entities) : [],
         fieldTypes: ['string', 'text', 'integer', 'bigInteger', 'decimal', 'boolean', 'date', 'datetime', 'email', 'password'],
+        relationTypes: ['belongsTo', 'hasMany'],
 
         get selectedEntity() {
             return this.entities[this.selectedEntityIndex] || null;
+        },
+
+        get availableRelationTargets() {
+            return this.entities
+                .filter((entity, index) => index !== this.selectedEntityIndex && entity.name.trim() !== '')
+                .map((entity, index) => ({
+                    name: this.toPascalCase(entity.name, `Model${index + 1}`),
+                }));
         },
 
         get canSubmit() {
@@ -18,13 +33,15 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
                 && this.entities.length > 0
                 && this.entities.every((entity) => entity.name.trim() !== ''
                     && entity.fields.length > 0
-                    && entity.fields.every((field) => field.name.trim() !== '' && field.type));
+                    && entity.fields.every((field) => field.name.trim() !== '' && field.type)
+                    && entity.relations.every((relation) => relation.type && relation.target));
         },
 
         addEntity() {
             this.entities.push({
                 name: '',
                 fields: [],
+                relations: [],
             });
             this.selectedEntityIndex = this.entities.length - 1;
         },
@@ -56,6 +73,18 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
 
         removeField(entity, index) {
             entity.fields.splice(index, 1);
+        },
+
+        addRelation(entity) {
+            const target = this.availableRelationTargets[0]?.name || '';
+            entity.relations.push({
+                type: 'belongsTo',
+                target,
+            });
+        },
+
+        removeRelation(entity, index) {
+            entity.relations.splice(index, 1);
         },
 
         entityLabel(entity, index) {
@@ -118,13 +147,20 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             return `    ${this.cleanFieldName(field.name, `field${index + 1}`)}: ${field.type}${modifiers.length ? ` ${modifiers.join(' ')}` : ''}`;
         },
 
+        relationLine(relation) {
+            return `    ${relation.type} ${this.toPascalCase(relation.target, 'TargetModel')}`;
+        },
+
         entityBlock(entity, index) {
             const entityName = this.toPascalCase(entity.name, `Model${index + 1}`);
-            const fields = entity.fields.length > 0
+            const fieldLines = entity.fields.length > 0
                 ? entity.fields.map((field, fieldIndex) => this.fieldLine(field, fieldIndex)).join('\n')
                 : '    # Dodaj polje';
+            const relationLines = entity.relations.length > 0
+                ? `\n${entity.relations.map((relation) => this.relationLine(relation)).join('\n')}`
+                : '';
 
-            return `  entity ${entityName} {\n${fields}\n  }`;
+            return `  entity ${entityName} {\n${fieldLines}${relationLines}\n  }`;
         },
 
         get dslSource() {

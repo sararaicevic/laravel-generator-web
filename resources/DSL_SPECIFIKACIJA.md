@@ -25,12 +25,7 @@ Pravila imenovanja:
 - naziv polja pocinje malim slovom i koristi camelCase oblik
 - svako polje se pise u zasebnoj liniji
 
-Specifikacija moze nastati na dva nacina:
-
-- direktnim pisanjem DSL teksta
-- interaktivnim unosom kroz web interfejs, pri cemu aplikacija automatski formira DSL tekst ispod haube
-
-U prototipu je primarni tok interaktivni web interfejs, dok DSL preview sluzi da prikaze formalnu specifikaciju koja se salje parseru i generatoru.
+Specifikacija nastaje kroz interaktivni web interfejs. Korisnik unosi naziv aplikacije, entitete, polja i relacije, dok aplikacija automatski formira DSL tekst koji se salje parseru i generatoru. DSL se ne prikazuje krajnjem korisniku u primarnom UI toku, vec se cuva kao formalni ulaz generatora i upisuje u logove projekta.
 
 ## 3. Primjer specifikacije
 
@@ -42,11 +37,13 @@ app InventorySystem {
     description: text nullable
     price: decimal required
     active: boolean
+    belongsTo Category
   }
 
   entity Category {
     title: string required unique
     description: text nullable
+    hasMany Product
   }
 }
 ```
@@ -62,9 +59,13 @@ Specification = AppDeclaration
 
 AppDeclaration = "app" AppName "{" EntityDeclaration+ "}"
 
-EntityDeclaration = "entity" EntityName "{" FieldDeclaration+ "}"
+EntityDeclaration = "entity" EntityName "{" EntityMember+ "}"
+
+EntityMember = FieldDeclaration | RelationDeclaration
 
 FieldDeclaration = FieldName ":" FieldType FieldModifier*
+
+RelationDeclaration = RelationType EntityName
 
 AppName = PascalCaseIdentifier
 EntityName = PascalCaseIdentifier
@@ -86,6 +87,10 @@ FieldModifier =
     "required"
   | "nullable"
   | "unique"
+
+RelationType =
+    "belongsTo"
+  | "hasMany"
 ```
 
 ## 5. Podrzani tipovi podataka
@@ -122,27 +127,19 @@ Za svaki definisani entitet generator pravi:
 - migraciju baze podataka
 - resource rutu
 - Blade prikaze za CRUD operacije
+- Eloquent relacije i foreign key kolone za `belongsTo` odnose
+- select polja u formama za izbor povezanog entiteta
 
 Generisani fajlovi se pakuju u ZIP arhivu koju korisnik moze preuzeti nakon zavrsetka queue job-a.
 
-## 8. Validacija DSL-a
+## 8. Relacije između entiteta
 
-Parser provjerava:
+Podrzane su dvije osnovne relacije:
 
-- da specifikacija pocinje `app` blokom
-- da postoji najmanje jedan entitet
-- da svaki entitet ima najmanje jedno polje
-- da nazivi aplikacije i entiteta pocinju velikim slovom
-- da nazivi polja pocinju malim slovom
-- da su tipovi polja iz skupa podrzanih tipova
-- da su modifikatori iz skupa podrzanih modifikatora
-- da nema duplih entiteta i duplih polja u istom entitetu
+- `belongsTo TargetEntity`: trenutni entitet dobija foreign key kolonu prema ciljnom entitetu, Eloquent `belongsTo` metodu i select polje u create/edit prikazima.
+- `hasMany TargetEntity`: trenutni entitet dobija Eloquent `hasMany` metodu i prikaz povezanih zapisa na detail stranici.
 
-## 9. Trenutna ogranicenja
-
-Trenutna verzija DSL-a podrzava entitete i jednostavna polja. Relacije izmedju entiteta predstavljaju naredni korak razvoja, jer su direktno vezane za cilj rada koji obuhvata opis struktura podataka i odnosa.
-
-Planirano prosirenje:
+Primjer:
 
 ```text
 entity Product {
@@ -156,9 +153,28 @@ entity Category {
 }
 ```
 
-Ovo prosirenje treba da omoguci generisanje foreign key kolona, Eloquent relacija i odgovarajucih polja u korisnickom interfejsu.
+Iz ovoga generator kreira `category_id` kolonu u `products` tabeli, `category()` metodu u `Product` modelu i `products()` metodu u `Category` modelu.
 
-## 10. Veza sa master radom
+## 9. Validacija DSL-a
+
+Parser provjerava:
+
+- da specifikacija pocinje `app` blokom
+- da postoji najmanje jedan entitet
+- da svaki entitet ima najmanje jedno polje
+- da nazivi aplikacije i entiteta pocinju velikim slovom
+- da nazivi polja pocinju malim slovom
+- da su tipovi polja iz skupa podrzanih tipova
+- da su modifikatori iz skupa podrzanih modifikatora
+- da nema duplih entiteta i duplih polja u istom entitetu
+- da relacije pokazuju na postojece entitete
+- da relacija ne pokazuje na isti entitet
+
+## 10. Trenutna ogranicenja
+
+Trenutna verzija DSL-a podrzava entitete, jednostavna polja i osnovne relacije `belongsTo` i `hasMany`. Ne pokriva kompleksne odnose kao sto su `belongsToMany`, polimorfne relacije, napredna poslovna pravila, autorizacija i generisanje testova.
+
+## 11. Veza sa master radom
 
 Ova specifikacija predstavlja osnovu za poglavlje o dizajnu DSL-a. Ona opisuje konkretnu sintaksu, semantiku, validaciju i mapiranje DSL elemenata na Laravel komponente, sto je direktno povezano sa ciljevima rada:
 

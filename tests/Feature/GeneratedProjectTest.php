@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\GenerateLaravelProject;
 use App\Models\GeneratedEntity;
 use App\Models\GeneratedProject;
+use App\Models\GeneratedRelation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
@@ -26,9 +27,15 @@ class GeneratedProjectTest extends TestCase
                 'name' => 'Inventory Demo',
                 'dsl' => <<<'DSL'
 app InventoryDemo {
+  entity Category {
+    title: string required
+    hasMany Product
+  }
+
   entity Product {
     name: string required
     price: decimal required
+    belongsTo Category
   }
 }
 DSL,
@@ -44,6 +51,7 @@ DSL,
         $this->assertNotNull($project->uuid);
         $this->assertNotNull($project->dsl_path);
         $this->assertFileExists(storage_path('app/'.$project->dsl_path));
+        $this->assertSame('belongsTo', GeneratedRelation::query()->where('target', 'Category')->firstOrFail()->type);
 
         Bus::assertDispatched(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }

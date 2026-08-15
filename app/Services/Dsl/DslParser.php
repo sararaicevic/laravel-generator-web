@@ -58,7 +58,7 @@ class DslParser
             $closeBrace = $this->findMatchingBrace($body, $openBrace);
             $entityBody = substr($body, $openBrace + 1, $closeBrace - $openBrace - 1);
 
-            $fields = $this->parseFields($entityName, $entityBody);
+            [$fields, $relations] = $this->parseEntityMembers($entityName, $entityBody);
             if ($fields === []) {
                 throw new DslParseException("Entitet {$entityName} mora imati najmanje jedno polje.");
             }
@@ -70,17 +70,19 @@ class DslParser
                 'variable' => Str::camel($entityName),
                 'collection' => Str::camel(Str::pluralStudly($entityName)),
                 'fields' => $fields,
+                'relations' => $relations,
             ];
 
             $offset = $closeBrace + 1;
         }
 
-        return array_values($entities);
+        return $this->validateRelationTargets($entities);
     }
 
-    private function parseFields(string $entityName, string $entityBody): array
+    private function parseEntityMembers(string $entityName, string $entityBody): array
     {
         $fields = [];
+        $relations = [];
         $lines = preg_split('/\R/', trim($entityBody)) ?: [];
 
         foreach ($lines as $lineNumber => $line) {
@@ -89,8 +91,21 @@ class DslParser
                 continue;
             }
 
+            if (preg_match('/^(belongsTo|hasMany)\s+([A-Z][A-Za-z0-9_]*)$/', $line, $relationMatch)) {
+                $type = $relationMatch[1];
+                $target = $relationMatch[2];
+                $key = $type.'_'.$target;
+
+                if (isset($relations[$key])) {
+                    throw new DslParseException("Relacija {$entityName}.{$type} {$target} je definisana više puta.");
+                }
+
+                $relations[$key] = $this->relationSpec($type, $target);
+                continue;
+            }
+
             if (!preg_match('/^([a-z][A-Za-z0-9_]*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)(.*)$/', $line, $match)) {
-                throw new DslParseException("Neispravna definicija polja u entitetu {$entityName}, linija ".($lineNumber + 1).'.');
+                throw new DslParseException("Neispravna definicija polja ili relacije u entitetu {$entityName}, linija ".($lineNumber + 1).'.');
             }
 
             $name = $match[1];
@@ -121,7 +136,42 @@ class DslParser
             ];
         }
 
-        return array_values($fields);
+        return [array_values($fields), array_values($relations)];
+    }
+
+    private function relationSpec(string $type, string $target): array
+    {
+        $targetVariable = Str::camel($target);
+        $targetCollection = Str::camel(Str::pluralStudly($target));
+
+        return [
+            'type' => $type,
+            'target' => $target,
+            'method' => $type === 'belongsTo' ? $targetVariable : $targetCollection,
+            'foreign_key' => $type === 'belongsTo' ? Str::snake($target).'_id' : null,
+            'target_table' => Str::snake(Str::pluralStudly($target)),
+            'target_variable' => $targetVariable,
+            'target_collection' => $targetCollection,
+        ];
+    }
+
+    private function validateRelationTargets(array $entities): array
+    {
+        $names = array_keys($entities);
+
+        foreach ($entities as $entityName => $entity) {
+            foreach ($entity['relations'] as $relation) {
+                if (!in_array($relation['target'], $names, true)) {
+                    throw new DslParseException("Relacija {$entityName}.{$relation['type']} {$relation['target']} pokazuje na nepostojeći entitet.");
+                }
+
+                if ($relation['target'] === $entityName) {
+                    throw new DslParseException("Relacija {$entityName}.{$relation['type']} {$relation['target']} ne može pokazivati na isti entitet.");
+                }
+            }
+        }
+
+        return array_values($entities);
     }
 
     private function stripComments(string $source): string

@@ -12,6 +12,10 @@
         letter-spacing: 0;
     }
 
+    [x-cloak] {
+        display: none !important;
+    }
+
     ::selection {
         @apply bg-emerald-300 text-zinc-950;
     }

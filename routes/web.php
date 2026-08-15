@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/generator/{project}/edit', [GeneratedProjectController::class, 'edit'])->name('generator.edit');
     Route::put('/generator/{project}', [GeneratedProjectController::class, 'update'])->name('generator.update');
     Route::post('/generator/{project}/rerun', [GeneratedProjectController::class, 'rerun'])->name('generator.rerun');
+    Route::get('/generator/{project}/status', [GeneratedProjectController::class, 'status'])->name('generator.status');
     Route::get('/generator/{project}', [GeneratedProjectController::class, 'show'])->name('generator.show');
     Route::get('/generator/{project}/download', [GeneratedProjectController::class, 'download'])->name('generator.download');
 });

@@ -20,4 +20,9 @@ class GeneratedEntity extends Model
     {
         return $this->hasMany(GeneratedField::class);
     }
+
+    public function relations()
+    {
+        return $this->hasMany(GeneratedRelation::class);
+    }
 }

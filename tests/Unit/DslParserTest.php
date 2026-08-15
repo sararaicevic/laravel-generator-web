@@ -27,6 +27,48 @@ DSL);
         $this->assertTrue($specification['entities'][0]['fields'][1]['unique']);
     }
 
+    public function test_it_parses_entity_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Category {
+    title: string required
+    hasMany Product
+  }
+
+  entity Product {
+    name: string required
+    belongsTo Category
+  }
+}
+DSL);
+
+        $category = $specification['entities'][0];
+        $product = $specification['entities'][1];
+
+        $this->assertSame('hasMany', $category['relations'][0]['type']);
+        $this->assertSame('Product', $category['relations'][0]['target']);
+        $this->assertSame('products', $category['relations'][0]['method']);
+
+        $this->assertSame('belongsTo', $product['relations'][0]['type']);
+        $this->assertSame('Category', $product['relations'][0]['target']);
+        $this->assertSame('category_id', $product['relations'][0]['foreign_key']);
+    }
+
+    public function test_it_rejects_relations_to_unknown_entities(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    name: string required
+    belongsTo Category
+  }
+}
+DSL);
+    }
+
     public function test_it_rejects_unsupported_field_types(): void
     {
         $this->expectException(DslParseException::class);
