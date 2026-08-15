@@ -55,6 +55,60 @@ DSL);
         $this->assertSame('category_id', $product['relations'][0]['foreign_key']);
     }
 
+    public function test_it_parses_entity_features(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    features: index show
+    name: string required
+  }
+}
+DSL);
+
+        $this->assertSame([
+            'index' => true,
+            'create' => false,
+            'edit' => false,
+            'show' => true,
+            'delete' => false,
+        ], $specification['entities'][0]['features']);
+    }
+
+    public function test_it_parses_entity_display_field(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    display: sku
+    name: string required
+    sku: string required unique
+  }
+}
+DSL);
+
+        $this->assertSame('sku', $specification['entities'][0]['display_field']);
+    }
+
+    public function test_it_parses_metadata_values_with_spaces(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    name: string required placeholder="Product display name" help="Shown on invoices and public pages" default="New product"
+    status: enum required options="in progress|ready to publish|archived"
+  }
+}
+DSL);
+
+        $fields = collect($specification['entities'][0]['fields'])->keyBy('name');
+
+        $this->assertSame('Product display name', $fields['name']['metadata']['placeholder']);
+        $this->assertSame('Shown on invoices and public pages', $fields['name']['metadata']['help']);
+        $this->assertSame('New product', $fields['name']['metadata']['default']);
+        $this->assertSame(['in progress', 'ready to publish', 'archived'], $fields['status']['metadata']['options']);
+    }
+
     public function test_it_adds_inverse_belongs_to_for_has_many_relations(): void
     {
         $specification = (new DslParser())->parse(<<<'DSL'
@@ -192,7 +246,21 @@ DSL);
         (new DslParser())->parse(<<<'DSL'
 app InventorySystem {
   entity Product {
-    name: json required
+            name: money required
+  }
+}
+DSL);
+    }
+
+    public function test_it_rejects_unknown_display_fields(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    display: sku
+    name: string required
   }
 }
 DSL);
@@ -224,6 +292,32 @@ DSL);
 app InventorySystem {
   entity Product {
     name: string required nullable
+  }
+}
+DSL);
+    }
+
+    public function test_it_rejects_unique_nullable_fields(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    sku: string nullable unique
+  }
+}
+DSL);
+    }
+
+    public function test_it_rejects_unique_fields_that_cannot_be_indexed(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    description: text required unique
   }
 }
 DSL);

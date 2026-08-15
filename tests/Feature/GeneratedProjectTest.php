@@ -160,6 +160,35 @@ DSL,
         Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }
 
+    public function test_project_persistence_stores_only_direct_relationships(): void
+    {
+        Bus::fake();
+
+        $user = $this->createUser();
+
+        $this
+            ->actingAs($user)
+            ->post(route('generator.store'), [
+                'name' => 'Blog Demo',
+                'dsl' => <<<'DSL'
+app BlogDemo {
+  entity User {
+    name: string required
+    hasMany Post
+  }
+
+  entity Post {
+    title: string required
+  }
+}
+DSL,
+            ]);
+
+        $this->assertSame(1, GeneratedRelation::query()->count());
+        $this->assertSame('hasMany', GeneratedRelation::query()->firstOrFail()->type);
+        $this->assertSame('Post', GeneratedRelation::query()->firstOrFail()->target);
+    }
+
     public function test_authenticated_user_can_rerun_failed_project_generation(): void
     {
         Bus::fake();

@@ -16,7 +16,7 @@ class StoreGeneratedProjectRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:100'],
             'dsl' => ['required', 'string'],
+            'builder_state' => ['nullable', 'string'],
         ];
     }
 }
-

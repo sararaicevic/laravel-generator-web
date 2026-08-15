@@ -44,6 +44,8 @@ class LaravelProjectGeneratorTest extends TestCase
             'resources/views/auth/login.blade.php',
             'resources/views/auth/register.blade.php',
             'resources/views/dashboard.blade.php',
+            'database/seeders/DatabaseSeeder.php',
+            'database/seeders/UserSeeder.php',
             'database/migrations/0001_01_01_000000_create_users_table.php',
             'database/migrations/0001_01_01_000001_create_cache_table.php',
             'database/migrations/0001_01_01_000002_create_jobs_table.php',
@@ -60,6 +62,7 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertFileExists($this->outputDir.'/app/Http/Controllers/ProductController.php');
         $this->assertFileExists($this->outputDir.'/resources/views/products/index.blade.php');
         $this->assertNotEmpty(glob($this->outputDir.'/database/migrations/*_create_products_table.php'));
+        $this->assertNotEmpty(glob($this->outputDir.'/database/migrations/*_add_foreign_keys_to_products_table.php'));
         $this->assertNotEmpty(glob($this->outputDir.'/database/migrations/*_create_product_tag_table.php'));
 
         $productModel = File::get($this->outputDir.'/app/Models/Product.php');
@@ -70,7 +73,12 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString('return $this->belongsToMany(Product::class)->withTimestamps();', $tagModel);
 
         $productMigration = File::get(glob($this->outputDir.'/database/migrations/*_create_products_table.php')[0]);
-        $this->assertStringContainsString("\$table->foreignId('category_id')->constrained('categories')->cascadeOnDelete();", $productMigration);
+        $this->assertStringContainsString("\$table->foreignId('category_id')->nullable();", $productMigration);
+        $this->assertStringNotContainsString("->constrained('categories')", $productMigration);
+
+        $productForeignKeysMigration = File::get(glob($this->outputDir.'/database/migrations/*_add_foreign_keys_to_products_table.php')[0]);
+        $this->assertStringContainsString("\$table->foreign('category_id')->references('id')->on('categories')->cascadeOnDelete();", $productForeignKeysMigration);
+        $this->assertStringContainsString("\$table->dropForeign(['category_id']);", $productForeignKeysMigration);
 
         $pivotMigration = File::get(glob($this->outputDir.'/database/migrations/*_create_product_tag_table.php')[0]);
         $this->assertStringContainsString("Schema::create('product_tag'", $pivotMigration);
@@ -80,6 +88,17 @@ class LaravelProjectGeneratorTest extends TestCase
         $productController = File::get($this->outputDir.'/app/Http/Controllers/ProductController.php');
         $this->assertStringContainsString("'tags' => 'nullable|array'", $productController);
         $this->assertStringContainsString('$product->tags()->sync($relations[\'tags\'] ?? []);', $productController);
+        $this->assertStringContainsString("return redirect()->route('products.index')", $productController);
+        $this->assertStringContainsString("->with('success', 'Product created successfully.')", $productController);
+        $this->assertStringContainsString('$request->validate($rules, $this->validationMessages())', $productController);
+        $this->assertStringContainsString("'category_id' => 'nullable|integer|exists:categories,id'", $productController);
+
+        $databaseSeeder = File::get($this->outputDir.'/database/seeders/DatabaseSeeder.php');
+        $this->assertStringContainsString('UserSeeder::class', $databaseSeeder);
+
+        $userSeeder = File::get($this->outputDir.'/database/seeders/UserSeeder.php');
+        $this->assertStringContainsString("'email' => 'test@example.com'", $userSeeder);
+        $this->assertStringContainsString("'password' => Hash::make('password')", $userSeeder);
 
         $readme = File::get($this->outputDir.'/README.md');
         $this->assertStringContainsString('This is a complete Laravel application', $readme);
@@ -87,6 +106,9 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString('npm install', $readme);
         $this->assertStringContainsString('CREATE DATABASE inventorydemo', $readme);
         $this->assertStringContainsString('php artisan migrate', $readme);
+        $this->assertStringContainsString('php artisan db:seed', $readme);
+        $this->assertStringContainsString('test@example.com', $readme);
+        $this->assertStringContainsString('php artisan storage:link', $readme);
         $this->assertStringNotContainsString('database.sqlite', $readme);
         $this->assertStringNotContainsString('Generisani entiteti', $readme);
 
@@ -106,11 +128,29 @@ class LaravelProjectGeneratorTest extends TestCase
 
         $composer = json_decode(File::get($this->outputDir.'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame('^8.4', $composer['require']['php']);
+        $this->assertContains('@php artisan db:seed --force', $composer['scripts']['setup']);
         $this->assertNotContains('@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"', $composer['scripts']['setup']);
 
         $phpunit = File::get($this->outputDir.'/phpunit.xml');
         $this->assertStringContainsString('name="DB_CONNECTION" value="mysql"', $phpunit);
         $this->assertStringContainsString('name="DB_DATABASE" value="inventorydemo_test"', $phpunit);
+
+        $dashboard = File::get($this->outputDir.'/resources/views/dashboard.blade.php');
+        $this->assertStringContainsString('What this app includes', $dashboard);
+        $this->assertStringNotContainsString('Generated CRUD', $dashboard);
+
+        $css = File::get($this->outputDir.'/resources/css/app.css');
+        $this->assertStringContainsString('.form-card', $css);
+        $this->assertStringNotContainsString('max-w-3xl', $css);
+        $this->assertStringContainsString('.confirm-dialog-backdrop', $css);
+
+        $confirmDialog = File::get($this->outputDir.'/resources/views/components/ui/confirm-dialog.blade.php');
+        $this->assertStringContainsString('confirm-dialog-panel', $confirmDialog);
+        $this->assertStringNotContainsString('return confirm', $confirmDialog);
+
+        $pagination = File::get($this->outputDir.'/resources/views/components/ui/pagination.blade.php');
+        $this->assertStringContainsString('pagination-pages', $pagination);
+        $this->assertStringContainsString('Showing {{ $paginator->firstItem() }}', $pagination);
     }
 
     public function test_it_generates_type_specific_field_handling(): void
@@ -137,17 +177,18 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString("foreach (['password'] as \$passwordField)", $accountController);
 
         $createView = File::get($this->outputDir.'/resources/views/accounts/create.blade.php');
-        $this->assertStringContainsString('<select name="is_active">', $createView);
-        $this->assertStringContainsString('<option value="1" @selected((string) old(\'is_active\') === \'1\')>Yes</option>', $createView);
-        $this->assertStringContainsString('<input type="datetime-local" name="published_at"', $createView);
-        $this->assertStringContainsString('<input type="password" name="password" autocomplete="new-password" value="{{ old(\'password\') }}">', $createView);
+        $this->assertStringContainsString('<input id="field_is_active" type="checkbox" name="is_active"', $createView);
+        $this->assertStringContainsString('<input id="field_published_at" type="datetime-local" name="published_at"', $createView);
+        $this->assertStringContainsString('<input id="field_password" type="password" name="password" autocomplete="new-password" value="{{ old(\'password\') }}"', $createView);
+        $this->assertStringNotContainsString('optional</span>', $createView);
 
         $editView = File::get($this->outputDir.'/resources/views/accounts/edit.blade.php');
-        $this->assertStringContainsString('<input type="password" name="password" autocomplete="new-password">', $editView);
+        $this->assertStringContainsString('<input id="field_password" type="password" name="password" autocomplete="new-password"', $editView);
         $this->assertStringContainsString("old('published_at', optional(\$account->published_at)->format('Y-m-d\\TH:i'))", $editView);
 
         $showView = File::get($this->outputDir.'/resources/views/accounts/show.blade.php');
-        $this->assertStringContainsString("\$account->is_active === null ? '-' : (\$account->is_active ? 'Yes' : 'No')", $showView);
+        $this->assertStringContainsString("\$account->is_active === null ? '<span class=\"badge muted\">Not set</span>'", $showView);
+        $this->assertStringContainsString("<span class=\"badge success\">Yes</span>", $showView);
         $this->assertStringContainsString("\$account->password ? 'Set' : '-'", $showView);
     }
 
@@ -165,6 +206,224 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString("Schema::create('catalog_labels'", $pivotMigration);
         $this->assertStringContainsString("\$table->foreignId('product_id')->constrained('products')->cascadeOnDelete();", $pivotMigration);
         $this->assertStringContainsString("\$table->foreignId('tag_id')->constrained('tags')->cascadeOnDelete();", $pivotMigration);
+    }
+
+    public function test_it_generates_relationship_ui_and_display_name_priority(): void
+    {
+        (new LaravelProjectGenerator())->generate($this->specification(), $this->outputDir);
+
+        $productModel = File::get($this->outputDir.'/app/Models/Product.php');
+        $this->assertStringContainsString("'name',", $productModel);
+        $this->assertStringContainsString('public function displayName(): string', $productModel);
+
+        $productIndex = File::get($this->outputDir.'/resources/views/products/index.blade.php');
+        $this->assertStringContainsString('<x-ui.confirm-dialog', $productIndex);
+        $this->assertStringContainsString('<x-ui.pagination :paginator="$products" />', $productIndex);
+        $this->assertStringContainsString('class="action-list"', $productIndex);
+        $this->assertStringNotContainsString('return confirm', $productIndex);
+
+        $productCreate = File::get($this->outputDir.'/resources/views/products/create.blade.php');
+        $this->assertStringContainsString('<label for="field_category_id">Category', $productCreate);
+        $this->assertStringContainsString('<select id="field_category_id" name="category_id"', $productCreate);
+        $this->assertStringContainsString('<fieldset class="field-full">', $productCreate);
+        $this->assertStringContainsString('name="tags[]"', $productCreate);
+        $this->assertStringContainsString('No Tag records yet. Save this record now and attach them later.', $productCreate);
+        $this->assertStringNotContainsString('optional</span>', $productCreate);
+
+        $categoryShow = File::get($this->outputDir.'/resources/views/categories/show.blade.php');
+        $this->assertStringContainsString('class="detail-header"', $categoryShow);
+        $this->assertStringContainsString('class="detail-breadcrumbs"', $categoryShow);
+        $this->assertStringContainsString('<a class="button primary"', $categoryShow);
+        $this->assertStringContainsString('<x-ui.table>', $categoryShow);
+        $this->assertStringContainsString('<x-ui.confirm-dialog', $categoryShow);
+        $this->assertStringContainsString('class="action-list"', $categoryShow);
+        $this->assertStringNotContainsString('return confirm', $categoryShow);
+        $this->assertStringNotContainsString('danger-zone', $categoryShow);
+        $this->assertStringContainsString('No related Product records', $categoryShow);
+        $this->assertStringContainsString("Route::has('products.create')", $categoryShow);
+    }
+
+    public function test_it_uses_display_field_first_for_generated_display_names(): void
+    {
+        (new LaravelProjectGenerator())->generate([
+            'app' => 'DisplayDemo',
+            'entities' => [
+                [
+                    'name' => 'Product',
+                    'table' => 'products',
+                    'route' => 'products',
+                    'variable' => 'product',
+                    'collection' => 'products',
+                    'display_field' => 'sku',
+                    'fields' => [
+                        [
+                            'name' => 'name',
+                            'label' => 'Name',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                        [
+                            'name' => 'sku',
+                            'label' => 'Sku',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => true,
+                        ],
+                    ],
+                    'relations' => [],
+                ],
+            ],
+        ], $this->outputDir);
+
+        $productModel = File::get($this->outputDir.'/app/Models/Product.php');
+        $this->assertStringContainsString("            'sku',\n            'name',", $productModel);
+    }
+
+    public function test_it_generates_image_file_uploads_and_metadata_validation(): void
+    {
+        (new LaravelProjectGenerator())->generate([
+            'app' => 'MediaDemo',
+            'entities' => [
+                [
+                    'name' => 'Asset',
+                    'table' => 'assets',
+                    'route' => 'assets',
+                    'variable' => 'asset',
+                    'collection' => 'assets',
+                    'fields' => [
+                        [
+                            'name' => 'title',
+                            'label' => 'Title',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                            'metadata' => ['minLength' => 3, 'maxLength' => 120],
+                        ],
+                        [
+                            'name' => 'photo',
+                            'label' => 'Photo',
+                            'type' => 'image',
+                            'required' => false,
+                            'unique' => false,
+                            'metadata' => ['accept' => 'image/png,image/jpeg', 'max' => 2048],
+                        ],
+                    ],
+                    'relations' => [],
+                ],
+            ],
+        ], $this->outputDir);
+
+        $assetModel = File::get($this->outputDir.'/app/Models/Asset.php');
+        $this->assertStringContainsString("'title',", $assetModel);
+
+        $assetController = File::get($this->outputDir.'/app/Http/Controllers/AssetController.php');
+        $this->assertStringContainsString("'title' => 'required|string|min:3|max:120'", $assetController);
+        $this->assertStringContainsString("'photo' => 'nullable|image|max:2048|mimetypes:image/png,image/jpeg'", $assetController);
+        $this->assertStringContainsString("\$request->file(\$fileField)->store(\$fileField, 'public')", $assetController);
+
+        $assetCreate = File::get($this->outputDir.'/resources/views/assets/create.blade.php');
+        $this->assertStringContainsString('enctype="multipart/form-data"', $assetCreate);
+        $this->assertStringContainsString('<input id="field_photo" type="file" name="photo" accept="image/png,image/jpeg"', $assetCreate);
+
+        $assetShow = File::get($this->outputDir.'/resources/views/assets/show.blade.php');
+        $this->assertStringContainsString('class="image-thumb"', $assetShow);
+    }
+
+    public function test_it_does_not_generate_unique_indexes_for_non_indexable_or_nullable_fields(): void
+    {
+        (new LaravelProjectGenerator())->generate([
+            'app' => 'InvalidUniqueDemo',
+            'entities' => [
+                [
+                    'name' => 'Article',
+                    'table' => 'articles',
+                    'route' => 'articles',
+                    'variable' => 'article',
+                    'collection' => 'articles',
+                    'fields' => [
+                        [
+                            'name' => 'summary',
+                            'label' => 'Summary',
+                            'type' => 'text',
+                            'required' => true,
+                            'unique' => true,
+                        ],
+                        [
+                            'name' => 'reference',
+                            'label' => 'Reference',
+                            'type' => 'string',
+                            'required' => false,
+                            'unique' => true,
+                        ],
+                    ],
+                    'relations' => [],
+                ],
+            ],
+        ], $this->outputDir);
+
+        $articleMigration = File::get(glob($this->outputDir.'/database/migrations/*_create_articles_table.php')[0]);
+        $this->assertStringContainsString("\$table->text('summary');", $articleMigration);
+        $this->assertStringContainsString("\$table->string('reference')->nullable();", $articleMigration);
+        $this->assertStringNotContainsString("->unique()", $articleMigration);
+
+        $articleController = File::get($this->outputDir.'/app/Http/Controllers/ArticleController.php');
+        $this->assertStringContainsString("'summary' => 'required|string'", $articleController);
+        $this->assertStringContainsString("'reference' => 'nullable|string'", $articleController);
+        $this->assertStringNotContainsString('|unique:articles', $articleController);
+    }
+
+    public function test_it_generates_only_enabled_model_screens_and_actions(): void
+    {
+        (new LaravelProjectGenerator())->generate([
+            'app' => 'ScreenOptionsDemo',
+            'entities' => [
+                [
+                    'name' => 'Product',
+                    'table' => 'products',
+                    'route' => 'products',
+                    'variable' => 'product',
+                    'collection' => 'products',
+                    'features' => [
+                        'index' => true,
+                        'create' => false,
+                        'edit' => false,
+                        'show' => true,
+                        'delete' => false,
+                    ],
+                    'fields' => [
+                        [
+                            'name' => 'name',
+                            'label' => 'Name',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                    ],
+                    'relations' => [],
+                ],
+            ],
+        ], $this->outputDir);
+
+        $this->assertFileExists($this->outputDir.'/resources/views/products/index.blade.php');
+        $this->assertFileExists($this->outputDir.'/resources/views/products/show.blade.php');
+        $this->assertFileDoesNotExist($this->outputDir.'/resources/views/products/create.blade.php');
+        $this->assertFileDoesNotExist($this->outputDir.'/resources/views/products/edit.blade.php');
+
+        $routes = File::get($this->outputDir.'/routes/web.php');
+        $this->assertStringContainsString("Route::resource('products', ProductController::class)->only(['index', 'show']);", $routes);
+
+        $controller = File::get($this->outputDir.'/app/Http/Controllers/ProductController.php');
+        $this->assertStringContainsString('public function index(): View', $controller);
+        $this->assertStringContainsString('public function show(Product $product): View', $controller);
+        $this->assertStringNotContainsString('public function create(): View', $controller);
+        $this->assertStringNotContainsString('public function destroy(Product $product): RedirectResponse', $controller);
+
+        $index = File::get($this->outputDir.'/resources/views/products/index.blade.php');
+        $this->assertStringContainsString("route('products.show', \$product)", $index);
+        $this->assertStringNotContainsString("route('products.create')", $index);
+        $this->assertStringNotContainsString("route('products.edit', \$product)", $index);
+        $this->assertStringNotContainsString("route('products.destroy', \$product)", $index);
     }
 
     private function specification(): array

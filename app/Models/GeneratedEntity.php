@@ -9,6 +9,12 @@ class GeneratedEntity extends Model
     protected $fillable = [
         'generated_project_id',
         'name',
+        'has_index',
+        'has_create',
+        'has_edit',
+        'has_show',
+        'allows_delete',
+        'display_field',
     ];
 
     public function project()

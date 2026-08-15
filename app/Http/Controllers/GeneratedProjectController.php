@@ -210,6 +210,12 @@ class GeneratedProjectController extends Controller
             /** @var GeneratedEntity $entity */
             $entity = $project->entities()->create([
                 'name' => $entitySpec['name'],
+                'has_index' => $entitySpec['features']['index'] ?? true,
+                'has_create' => $entitySpec['features']['create'] ?? true,
+                'has_edit' => $entitySpec['features']['edit'] ?? true,
+                'has_show' => $entitySpec['features']['show'] ?? true,
+                'allows_delete' => $entitySpec['features']['delete'] ?? true,
+                'display_field' => $entitySpec['display_field'] ?? null,
             ]);
 
             foreach ($entitySpec['fields'] as $fieldSpec) {
@@ -218,10 +224,15 @@ class GeneratedProjectController extends Controller
                     'type' => $fieldSpec['type'],
                     'is_required' => $fieldSpec['required'],
                     'is_unique' => $fieldSpec['unique'],
+                    'metadata' => $fieldSpec['metadata'] ?? [],
                 ]);
             }
 
             foreach ($entitySpec['relations'] as $relationSpec) {
+                if ($relationSpec['inferred'] ?? false) {
+                    continue;
+                }
+
                 $entity->relations()->create([
                     'type' => $relationSpec['type'],
                     'target' => $relationSpec['target'],
@@ -266,6 +277,14 @@ class GeneratedProjectController extends Controller
         return $project->entities
             ->map(fn (GeneratedEntity $entity): array => [
                 'name' => $entity->name,
+                'features' => [
+                    'index' => (bool) ($entity->has_index ?? true),
+                    'create' => (bool) ($entity->has_create ?? true),
+                    'edit' => (bool) ($entity->has_edit ?? true),
+                    'show' => (bool) ($entity->has_show ?? true),
+                    'delete' => (bool) ($entity->allows_delete ?? true),
+                ],
+                'display_field' => $entity->display_field,
                 'fields' => $entity->fields
                     ->map(fn ($field): array => [
                         'name' => $field->name,
@@ -273,6 +292,7 @@ class GeneratedProjectController extends Controller
                         'required' => (bool) $field->is_required,
                         'nullable' => !(bool) $field->is_required,
                         'unique' => (bool) $field->is_unique,
+                        'metadata' => $field->metadata ?? [],
                     ])
                     ->values()
                     ->all(),

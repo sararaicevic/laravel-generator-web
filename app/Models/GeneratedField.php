@@ -12,6 +12,11 @@ class GeneratedField extends Model
         'type',
         'is_required',
         'is_unique',
+        'metadata',
+    ];
+
+    protected $casts = [
+        'metadata' => 'array',
     ];
 
     public function entity()

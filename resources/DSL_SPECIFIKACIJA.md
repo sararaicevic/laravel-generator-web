@@ -32,6 +32,8 @@ Specifikacija nastaje kroz interaktivni web interfejs. Korisnik unosi naziv apli
 ```text
 app InventorySystem {
   entity Product {
+    features: index create edit show delete
+    display: name
     name: string required
     sku: string required unique
     description: text nullable
@@ -61,7 +63,10 @@ AppDeclaration = "app" AppName "{" EntityDeclaration+ "}"
 
 EntityDeclaration = "entity" EntityName "{" EntityMember+ "}"
 
-EntityMember = FieldDeclaration | RelationDeclaration
+EntityMember = FeatureDeclaration | DisplayDeclaration | FieldDeclaration | RelationDeclaration
+
+FeatureDeclaration = "features" ":" (FeatureName+ | "none")
+DisplayDeclaration = "display" ":" FieldName
 
 FieldDeclaration = FieldName ":" FieldType FieldModifier*
 
@@ -81,7 +86,17 @@ FieldType =
   | "date"
   | "datetime"
   | "email"
+  | "enum"
+  | "file"
+  | "float"
+  | "foreignId"
+  | "image"
+  | "json"
   | "password"
+  | "phone"
+  | "time"
+  | "timestamp"
+  | "url"
 
 FieldModifier =
     "required"
@@ -90,7 +105,16 @@ FieldModifier =
 
 RelationType =
     "belongsTo"
+  | "belongsToMany"
   | "hasMany"
+  | "hasOne"
+
+FeatureName =
+    "index"
+  | "create"
+  | "edit"
+  | "show"
+  | "delete"
 ```
 
 ## 5. Podrzani tipovi podataka
@@ -106,7 +130,17 @@ RelationType =
 | `date` | `date` | `date` |
 | `datetime` | `dateTime` | `date` |
 | `email` | `string` | `email` |
+| `enum` | `string` | `string` + `in` kada su definisane opcije |
+| `file` | `string` | `file` |
+| `float` | `float` | `numeric` |
+| `foreignId` | `foreignId` | `integer` |
+| `image` | `string` | `image` |
+| `json` | `json` | `json` |
 | `password` | `string` | `string|min:8` |
+| `phone` | `string` | `string` |
+| `time` | `time` | `date_format:H:i` |
+| `timestamp` | `timestamp` | `date` |
+| `url` | `string` | `url` |
 
 ## 6. Modifikatori polja
 
@@ -118,21 +152,63 @@ Podrzani su sljedeci modifikatori:
 
 Ako polje nema `required`, generator ga tretira kao opcionalno.
 
-## 7. Izlaz generatora
+`unique` je dozvoljen samo za `required` polja i tipove koji mogu dobiti standardni MySQL unique indeks: `string`, `email`, `integer`, `bigInteger`, `decimal`, `date` i `datetime`. Tipovi kao `text`, `password` i `boolean` ne mogu biti `unique` u DSL-u.
+
+Polja mogu imati dodatnu metadata validaciju u obliku `kljuc=vrijednost`, na primjer:
+
+```text
+title: string required minLength=3 maxLength=120 placeholder="Product title"
+status: enum required options=draft|published|archived
+photo: image nullable accept=image/png,image/jpeg max=2048
+```
+
+Podrzani metadata kljucevi su `min`, `max`, `step`, `minLength`, `maxLength`, `options`, `accept`, `placeholder`, `default` i `help`.
+
+## 7. Opcije generisanih ekrana
+
+Za svaki entitet moze se opciono definisati `features` linija:
+
+```text
+features: index create edit show delete
+```
+
+Podrzane opcije su:
+
+- `index`: generise listu zapisa
+- `create`: generise create formu i store rutu
+- `edit`: generise edit formu i update rutu
+- `show`: generise preview/detail stranicu
+- `delete`: dozvoljava delete akciju i destroy rutu
+
+Ako se `features` linija izostavi, podrazumijevaju se sve opcije. Ako model ne treba da ima nijedan UI ekran, koristi se:
+
+```text
+features: none
+```
+
+Za svaki entitet moze se opciono definisati display polje:
+
+```text
+display: name
+```
+
+Generator koristi ovo polje kao prvi izbor za `displayName()` metodu, odnosno za prikaz povezanih zapisa u formama, tabelama i related sekcijama. Ako display polje nije definisano, koristi se prioritet `name`, zatim `title`, zatim `email`, a zatim ID zapisa.
+
+## 8. Izlaz generatora
 
 Za svaki definisani entitet generator pravi:
 
 - Eloquent model
 - resource kontroler
 - migraciju baze podataka
-- resource rutu
-- Blade prikaze za CRUD operacije
+- resource rute za ukljucene `features` opcije
+- Blade prikaze za ukljucene CRUD/preview operacije
 - Eloquent relacije i foreign key kolone za `belongsTo` odnose
 - select polja u formama za izbor povezanog entiteta
 
 Generisani fajlovi se pakuju u ZIP arhivu koju korisnik moze preuzeti nakon zavrsetka queue job-a.
 
-## 8. Relacije između entiteta
+## 9. Relacije između entiteta
 
 Podrzane su dvije osnovne relacije:
 

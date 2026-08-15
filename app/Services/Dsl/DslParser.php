@@ -20,10 +20,44 @@ class DslParser
         'datetime',
         'decimal',
         'email',
+        'enum',
+        'file',
+        'float',
+        'foreignId',
+        'image',
         'integer',
+        'json',
         'password',
+        'phone',
         'string',
+        'time',
+        'timestamp',
         'text',
+        'url',
+    ];
+
+    private const UNIQUE_TYPES = [
+        'bigInteger',
+        'date',
+        'datetime',
+        'decimal',
+        'email',
+        'enum',
+        'float',
+        'integer',
+        'phone',
+        'string',
+        'time',
+        'timestamp',
+        'url',
+    ];
+
+    private const FEATURES = [
+        'index',
+        'create',
+        'edit',
+        'show',
+        'delete',
     ];
 
     public function parse(string $source): array
@@ -65,7 +99,7 @@ class DslParser
             $closeBrace = $this->findMatchingBrace($body, $openBrace);
             $entityBody = substr($body, $openBrace + 1, $closeBrace - $openBrace - 1);
 
-            [$fields, $relations] = $this->parseEntityMembers($entityName, $entityBody);
+            [$fields, $relations, $features, $displayField] = $this->parseEntityMembers($entityName, $entityBody);
             if ($fields === []) {
                 throw new DslParseException("Entitet {$entityName} mora imati najmanje jedno polje.");
             }
@@ -76,6 +110,8 @@ class DslParser
                 'route' => Str::kebab(Str::pluralStudly($entityName)),
                 'variable' => Str::camel($entityName),
                 'collection' => Str::camel(Str::pluralStudly($entityName)),
+                'features' => $features,
+                'display_field' => $displayField,
                 'fields' => $fields,
                 'relations' => $relations,
             ];
@@ -90,11 +126,26 @@ class DslParser
     {
         $fields = [];
         $relations = [];
+        $displayField = null;
         $lines = preg_split('/\R/', trim($entityBody)) ?: [];
 
         foreach ($lines as $lineNumber => $line) {
             $line = trim($line);
             if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^features\s*:\s*(.*)$/', $line, $featureMatch)) {
+                $features = $this->parseFeatures($entityName, $featureMatch[1]);
+                continue;
+            }
+
+            if (preg_match('/^display\s*:\s*([a-z][A-Za-z0-9_]*)$/', $line, $displayMatch)) {
+                if ($displayField !== null) {
+                    throw new DslParseException("Entitet {$entityName} ima vise display definicija.");
+                }
+
+                $displayField = $displayMatch[1];
                 continue;
             }
 
@@ -122,17 +173,11 @@ class DslParser
 
             $name = $match[1];
             $type = $match[2];
-            $modifiers = preg_split('/\s+/', trim($match[3])) ?: [];
-            $modifiers = array_values(array_filter($modifiers));
+            $tokens = $this->fieldTokens(trim($match[3]));
+            [$modifiers, $metadata] = $this->parseFieldTokens($entityName, $name, $tokens);
 
             if (!in_array($type, self::TYPES, true)) {
                 throw new DslParseException("Tip {$type} nije podržan za polje {$entityName}.{$name}.");
-            }
-
-            foreach ($modifiers as $modifier) {
-                if (!in_array($modifier, ['required', 'unique', 'nullable'], true)) {
-                    throw new DslParseException("Modifikator {$modifier} nije podržan za polje {$entityName}.{$name}.");
-                }
             }
 
             $required = in_array('required', $modifiers, true);
@@ -140,6 +185,16 @@ class DslParser
 
             if ($required && $nullable) {
                 throw new DslParseException("Polje {$entityName}.{$name} ne može biti i required i nullable.");
+            }
+
+            $unique = in_array('unique', $modifiers, true);
+
+            if ($unique && !$required) {
+                throw new DslParseException("Polje {$entityName}.{$name} mora biti required da bi moglo biti unique.");
+            }
+
+            if ($unique && !in_array($type, self::UNIQUE_TYPES, true)) {
+                throw new DslParseException("Polje {$entityName}.{$name} tipa {$type} ne može biti unique.");
             }
 
             if (isset($fields[$name])) {
@@ -151,11 +206,151 @@ class DslParser
                 'label' => Str::headline($name),
                 'type' => $type,
                 'required' => $required,
-                'unique' => in_array('unique', $modifiers, true),
+                'unique' => $unique,
+                'metadata' => $metadata,
             ];
         }
 
-        return [array_values($fields), array_values($relations)];
+        if ($displayField !== null && !isset($fields[$displayField])) {
+            throw new DslParseException("Display polje {$entityName}.{$displayField} ne postoji.");
+        }
+
+        return [array_values($fields), array_values($relations), $features ?? $this->defaultFeatures(), $displayField];
+    }
+
+    private function parseFieldTokens(string $entityName, string $fieldName, array $tokens): array
+    {
+        $modifiers = [];
+        $metadata = [];
+
+        foreach ($tokens as $token) {
+            if (in_array($token, ['required', 'unique', 'nullable'], true)) {
+                $modifiers[] = $token;
+                continue;
+            }
+
+            if (!str_contains($token, '=')) {
+                throw new DslParseException("Modifikator {$token} nije podržan za polje {$entityName}.{$fieldName}.");
+            }
+
+            [$key, $value] = explode('=', $token, 2);
+            $key = $this->metadataKeyAlias(trim($key));
+            $value = $this->unquoteMetadataValue(trim($value));
+
+            if (!in_array($key, $this->fieldMetadataKeys(), true)) {
+                throw new DslParseException("Metadata {$key} nije podržana za polje {$entityName}.{$fieldName}.");
+            }
+
+            $metadata[$key] = $this->normalizeMetadataValue($key, $value);
+        }
+
+        return [$modifiers, $metadata];
+    }
+
+    private function fieldTokens(string $source): array
+    {
+        if ($source === '') {
+            return [];
+        }
+
+        preg_match_all('/[^\s=]+=(?:"(?:\\\\.|[^"\\\\])*"|[^\s]+)|[^\s]+/', $source, $matches);
+
+        return array_values(array_filter($matches[0] ?? [], fn (string $token): bool => trim($token) !== ''));
+    }
+
+    private function unquoteMetadataValue(string $value): string
+    {
+        if (strlen($value) >= 2 && str_starts_with($value, '"') && str_ends_with($value, '"')) {
+            return stripcslashes(substr($value, 1, -1));
+        }
+
+        return $value;
+    }
+
+    private function fieldMetadataKeys(): array
+    {
+        return [
+            'accept',
+            'allowedFileTypes',
+            'default',
+            'help',
+            'max',
+            'maximum',
+            'maximumLength',
+            'maxLength',
+            'min',
+            'minimum',
+            'minimumLength',
+            'minLength',
+            'options',
+            'placeholder',
+            'step',
+        ];
+    }
+
+    private function metadataKeyAlias(string $key): string
+    {
+        return [
+            'allowedFileTypes' => 'accept',
+            'maximum' => 'max',
+            'maximumLength' => 'maxLength',
+            'minimum' => 'min',
+            'minimumLength' => 'minLength',
+        ][$key] ?? $key;
+    }
+
+    private function normalizeMetadataValue(string $key, string $value): mixed
+    {
+        if ($key === 'options') {
+            return collect(explode('|', $value))
+                ->map(fn (string $option): string => trim($option))
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        if (in_array($key, ['min', 'max', 'step'], true) && is_numeric($value)) {
+            return str_contains($value, '.') ? (float) $value : (int) $value;
+        }
+
+        if (in_array($key, ['minLength', 'maxLength'], true) && ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        return $value;
+    }
+
+    private function parseFeatures(string $entityName, string $source): array
+    {
+        $values = preg_split('/\s+/', trim($source)) ?: [];
+        $values = array_values(array_filter($values));
+
+        if ($values === []) {
+            throw new DslParseException("Entity {$entityName} mora imati najmanje jednu feature opciju ili izostaviti features liniju.");
+        }
+
+        if ($values === ['none']) {
+            return collect(self::FEATURES)
+                ->mapWithKeys(fn (string $feature) => [$feature => false])
+                ->all();
+        }
+
+        foreach ($values as $value) {
+            if (!in_array($value, self::FEATURES, true)) {
+                throw new DslParseException("Feature {$value} nije podržan za entity {$entityName}.");
+            }
+        }
+
+        return collect(self::FEATURES)
+            ->mapWithKeys(fn (string $feature) => [$feature => in_array($feature, $values, true)])
+            ->all();
+    }
+
+    private function defaultFeatures(): array
+    {
+        return collect(self::FEATURES)
+            ->mapWithKeys(fn (string $feature) => [$feature => true])
+            ->all();
     }
 
     private function relationSpec(string $source, string $type, string $target, bool $inferred = false, ?string $pivotTable = null): array

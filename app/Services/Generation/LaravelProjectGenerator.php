@@ -12,7 +12,6 @@ class LaravelProjectGenerator
         '.gitignore',
         '.npmrc',
         'artisan',
-        'package.json',
         'postcss.config.js',
         'tailwind.config.js',
         'vite.config.js',
@@ -31,19 +30,31 @@ class LaravelProjectGenerator
         'session.php',
     ];
 
+    private const ENTITY_FEATURES = [
+        'index',
+        'create',
+        'edit',
+        'show',
+        'delete',
+    ];
+
     public function generate(array $specification, string $outputDir): void
     {
         $this->ensureCleanDirectory($outputDir);
 
         $appName = $specification['app'];
+        $entities = collect($specification['entities'])
+            ->map(fn (array $entity) => $this->withDefaultFeatures($entity))
+            ->all();
 
         $this->writeBaseProject($outputDir, $appName);
-        $this->write($outputDir.'/README.md', $this->readme($appName, $specification['entities']));
-        $this->write($outputDir.'/routes/web.php', $this->routes($specification['entities']));
+        $this->write($outputDir.'/README.md', $this->readme($appName, $entities));
+        $this->write($outputDir.'/routes/web.php', $this->routes($entities));
         $this->write($outputDir.'/routes/auth.php', $this->authRoutes());
-        $this->write($outputDir.'/resources/views/layouts/app.blade.php', $this->layout($appName, $specification['entities']));
+        $this->write($outputDir.'/resources/views/layouts/app.blade.php', $this->layout($appName, $entities));
         $this->write($outputDir.'/resources/views/layouts/auth.blade.php', $this->authLayout($appName));
-        $this->write($outputDir.'/resources/views/dashboard.blade.php', $this->dashboardView($appName, $specification['entities']));
+        $this->writeUiComponents($outputDir);
+        $this->write($outputDir.'/resources/views/dashboard.blade.php', $this->dashboardView($appName, $entities));
         $this->write($outputDir.'/resources/views/auth/login.blade.php', $this->loginView());
         $this->write($outputDir.'/resources/views/auth/register.blade.php', $this->registerView());
         $this->write($outputDir.'/app/Http/Controllers/Auth/AuthenticatedSessionController.php', $this->authenticatedSessionController());
@@ -53,24 +64,36 @@ class LaravelProjectGenerator
         $this->write($outputDir.'/tests/Feature/ExampleTest.php', $this->featureExampleTest());
         $this->write($outputDir.'/tests/Unit/ExampleTest.php', $this->unitExampleTest());
 
-        $migrationEntities = $this->sortEntitiesForMigrations($specification['entities']);
-
-        foreach ($specification['entities'] as $entity) {
+        foreach ($entities as $entity) {
             $this->write($outputDir.'/app/Models/'.$entity['name'].'.php', $this->model($entity));
             $this->write($outputDir.'/app/Http/Controllers/'.$entity['name'].'Controller.php', $this->controller($entity));
             $this->writeViews($outputDir, $entity);
         }
 
-        foreach ($migrationEntities as $index => $entity) {
+        foreach ($entities as $index => $entity) {
             $this->write(
                 $outputDir.'/database/migrations/'.$this->migrationFileName($index, $entity).'.php',
                 $this->migration($entity),
             );
         }
 
-        foreach ($this->belongsToManyPivotRelations($migrationEntities) as $index => $relation) {
+        $foreignKeyEntities = collect($entities)
+            ->filter(fn (array $entity): bool => $this->belongsToRelations($entity) !== [])
+            ->values()
+            ->all();
+
+        foreach ($foreignKeyEntities as $index => $entity) {
             $this->write(
-                $outputDir.'/database/migrations/'.$this->pivotMigrationFileName(count($migrationEntities) + $index, $relation).'.php',
+                $outputDir.'/database/migrations/'.$this->foreignKeysMigrationFileName(count($entities) + $index, $entity).'.php',
+                $this->foreignKeysMigration($entity),
+            );
+        }
+
+        $pivotOffset = count($entities) + count($foreignKeyEntities);
+
+        foreach ($this->belongsToManyPivotRelations($entities) as $index => $relation) {
+            $this->write(
+                $outputDir.'/database/migrations/'.$this->pivotMigrationFileName($pivotOffset + $index, $relation).'.php',
                 $this->pivotMigration($relation),
             );
         }
@@ -85,6 +108,7 @@ class LaravelProjectGenerator
         $databaseName = $this->databaseName($appName);
 
         $this->write($outputDir.'/composer.json', $this->composerJson($appName));
+        $this->write($outputDir.'/package.json', $this->packageJson());
         $this->write($outputDir.'/.env.example', $this->envExample($appName));
         $this->write($outputDir.'/phpunit.xml', $this->phpunitXml($databaseName));
 
@@ -100,17 +124,20 @@ class LaravelProjectGenerator
             'app/Http/Controllers/Controller.php',
             'app/Models/User.php',
             'app/Providers/AppServiceProvider.php',
-            'database/seeders/DatabaseSeeder.php',
             'public/.htaccess',
             'public/favicon.ico',
             'public/index.php',
+            'public/logo.svg',
             'public/robots.txt',
-            'resources/css/app.css',
             'resources/js/app.js',
             'routes/console.php',
         ] as $file) {
             $this->copyBaseFile($file, $outputDir.'/'.$file);
         }
+
+        $this->write($outputDir.'/database/seeders/DatabaseSeeder.php', $this->databaseSeeder());
+        $this->write($outputDir.'/database/seeders/UserSeeder.php', $this->userSeeder());
+        $this->write($outputDir.'/resources/css/app.css', $this->generatedAppCss());
 
         foreach (glob(base_path('database/migrations/0001_*.php')) ?: [] as $migration) {
             $this->copyBaseFile(
@@ -149,6 +176,576 @@ class LaravelProjectGenerator
         }
 
         copy($sourcePath, $target);
+    }
+
+    private function generatedAppCss(): string
+    {
+        return <<<'CSS'
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        color-scheme: light;
+    }
+
+    body {
+        @apply bg-[#F8FAFC] text-[#1E293B];
+        letter-spacing: 0;
+    }
+
+    ::selection {
+        @apply bg-[#E0E7FF] text-[#1E293B];
+    }
+
+    a {
+        @apply text-inherit;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+        font: inherit;
+    }
+}
+
+@layer components {
+    .app-shell {
+        @apply min-h-screen bg-[#F8FAFC] text-[#1E293B];
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
+
+    .app-container {
+        @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+    }
+
+    .mobile-topbar {
+        @apply sticky top-0 z-40 flex h-16 items-center justify-between border-b border-[#E2E8F0] bg-white px-4 lg:hidden;
+    }
+
+    .sidebar-backdrop {
+        @apply fixed inset-0 z-40 bg-[#1E293B]/30 lg:hidden;
+    }
+
+    .sidebar {
+        @apply fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-[#E2E8F0] bg-white transition-transform duration-200 lg:translate-x-0;
+    }
+
+    .sidebar.is-closed {
+        @apply -translate-x-full lg:translate-x-0;
+    }
+
+    .sidebar-header {
+        @apply flex h-20 items-center justify-between border-b border-[#E2E8F0] px-5;
+    }
+
+    .brand-link {
+        @apply inline-flex items-center gap-3 text-[#1E293B] no-underline;
+    }
+
+    .brand-logo {
+        @apply h-10 w-10 shrink-0;
+    }
+
+    .brand-link span {
+        @apply text-sm font-bold;
+    }
+
+    .sidebar-nav {
+        @apply flex-1 space-y-1 overflow-y-auto px-3 py-5;
+    }
+
+    .nav,
+    .actions-row,
+    .row {
+        @apply flex flex-wrap items-center gap-3;
+    }
+
+    .sidebar-footer {
+        @apply border-t border-[#E2E8F0] p-4;
+    }
+
+    .nav-link {
+        @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#64748B] no-underline transition duration-200 hover:bg-[#EEF2FF] hover:text-[#4F46E5] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2;
+    }
+
+    .nav-link.active {
+        @apply bg-[#E0E7FF] text-[#4F46E5];
+    }
+
+    .nav-icon {
+        @apply flex h-8 w-8 items-center justify-center rounded-lg bg-[#F8FAFC] text-[#6366F1];
+    }
+
+    .user-chip {
+        @apply flex items-center gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 text-sm font-medium text-[#1E293B];
+    }
+
+    .user-avatar {
+        @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E0E7FF] text-sm font-bold text-[#4F46E5];
+    }
+
+    .content-shell {
+        @apply min-h-screen lg:pl-72;
+    }
+
+    .page-main {
+        @apply px-4 py-6 sm:px-6 lg:px-8;
+    }
+
+    .page-header {
+        @apply mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between;
+    }
+
+    .detail-header {
+        @apply mb-6 border-b border-[#E2E8F0] pb-5;
+    }
+
+    .detail-header-top {
+        @apply flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between;
+    }
+
+    .detail-breadcrumbs {
+        @apply flex flex-wrap items-center gap-2 text-sm text-[#64748B];
+    }
+
+    .back-button {
+        @apply inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#CBD5E1] bg-white text-[#1E293B] transition hover:border-[#A5B4FC] hover:bg-[#F8FAFC] hover:text-[#4F46E5];
+    }
+
+    .top-actions {
+        @apply flex flex-wrap items-center gap-2;
+    }
+
+    .page-title {
+        @apply space-y-1;
+    }
+
+    .eyebrow {
+        @apply text-xs font-semibold uppercase tracking-wide text-[#6366F1];
+    }
+
+    h1 {
+        @apply m-0 text-2xl font-bold leading-tight text-[#1E293B] sm:text-3xl;
+    }
+
+    h2 {
+        @apply text-lg font-semibold text-[#1E293B];
+    }
+
+    .muted {
+        @apply text-sm text-[#64748B];
+    }
+
+    .card {
+        @apply rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_10px_30px_rgba(30,41,59,0.05)];
+    }
+
+    .table-card {
+        @apply overflow-hidden;
+    }
+
+    .table-toolbar {
+        @apply flex flex-col gap-3 border-b border-[#E2E8F0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between;
+    }
+
+    .table-title {
+        @apply text-sm font-semibold text-[#1E293B];
+    }
+
+    .table-meta {
+        @apply text-sm text-[#64748B];
+    }
+
+    .table-scroll {
+        @apply overflow-x-auto;
+    }
+
+    table {
+        @apply w-full border-collapse;
+    }
+
+    th {
+        @apply border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B];
+    }
+
+    td {
+        @apply border-b border-[#E2E8F0] px-5 py-4 text-sm text-[#1E293B];
+    }
+
+    tr:last-child td {
+        @apply border-b-0;
+    }
+
+    tbody tr {
+        @apply transition duration-150 hover:bg-[#F8FAFC];
+    }
+
+    .numeric-cell {
+        @apply text-right tabular-nums;
+    }
+
+    .actions-heading {
+        @apply w-36 text-right;
+    }
+
+    .actions {
+        @apply w-36 text-right align-middle;
+    }
+
+    .action-list {
+        @apply inline-flex items-center justify-end gap-2;
+    }
+
+    .actions-row {
+        @apply mt-5;
+    }
+
+    .button {
+        @apply inline-flex items-center justify-center gap-2 rounded-[10px] border px-4 py-2.5 text-sm font-semibold no-underline transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    }
+
+    .button.primary,
+    button.button {
+        @apply border-[#6366F1] bg-[#6366F1] text-white shadow-[0_8px_18px_rgba(99,102,241,0.18)] hover:border-[#4F46E5] hover:bg-[#4F46E5];
+    }
+
+    .button.secondary,
+    .button:not(.primary):not(.danger) {
+        @apply border-[#CBD5E1] bg-white text-[#1E293B] hover:border-[#A5B4FC] hover:bg-[#F8FAFC] hover:text-[#6366F1];
+    }
+
+    .button.danger {
+        @apply border-[#FEE2E2] bg-white text-[#EF4444] hover:bg-[#FEE2E2];
+    }
+
+    .icon-button {
+        @apply inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#E2E8F0] bg-white text-[#64748B] transition duration-200 hover:border-[#CBD5E1] hover:bg-[#F8FAFC] hover:text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2;
+    }
+
+    .icon-button.primary {
+        @apply border-[#E0E7FF] bg-[#E0E7FF] text-[#4F46E5] hover:bg-[#C7D2FE];
+    }
+
+    .icon-button.danger {
+        @apply border-[#FEE2E2] bg-white text-[#EF4444] hover:bg-[#FEE2E2];
+    }
+
+    .button svg,
+    .icon-button svg,
+    .back-button svg,
+    .nav-link svg {
+        @apply h-4 w-4 shrink-0;
+    }
+
+    form.inline {
+        @apply m-0;
+    }
+
+    .form-card {
+        @apply grid w-full gap-6 p-6;
+    }
+
+    .form-section {
+        @apply grid gap-5 md:grid-cols-2;
+    }
+
+    .form-section-title {
+        @apply border-b border-[#E2E8F0] pb-3 text-base font-semibold text-[#1E293B] md:col-span-2;
+    }
+
+    .form-section > div,
+    .form-section > fieldset {
+        @apply grid gap-2;
+    }
+
+    .form-actions {
+        @apply flex flex-col-reverse gap-3 border-t border-[#E2E8F0] pt-5 sm:flex-row sm:justify-end;
+    }
+
+    label {
+        @apply text-sm font-medium text-[#1E293B];
+    }
+
+    fieldset {
+        @apply m-0 grid gap-2 border-0 p-0 text-sm text-[#1E293B];
+    }
+
+    legend {
+        @apply mb-1 text-sm font-medium text-[#1E293B];
+    }
+
+    .field-full {
+        @apply md:col-span-2;
+    }
+
+    .required-mark {
+        @apply text-[#EF4444];
+    }
+
+    input,
+    textarea,
+    select {
+        @apply w-full rounded-[10px] border-[#CBD5E1] bg-white text-sm text-[#1E293B] shadow-sm placeholder:text-[#94A3B8] transition duration-200 focus:border-[#6366F1] focus:ring-[#6366F1];
+    }
+
+    input:disabled,
+    textarea:disabled,
+    select:disabled,
+    input[readonly],
+    textarea[readonly] {
+        @apply cursor-not-allowed border-[#E2E8F0] bg-[#F1F5F9] text-[#94A3B8] shadow-none;
+    }
+
+    input[type='checkbox'] {
+        @apply h-4 w-4 rounded border-[#CBD5E1] text-[#6366F1] focus:ring-[#6366F1];
+    }
+
+    input[type='file'] {
+        @apply cursor-pointer border-dashed bg-[#F8FAFC] file:mr-4 file:rounded-md file:border-0 file:bg-[#EEF2FF] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-[#4F46E5] hover:bg-white;
+    }
+
+    textarea {
+        @apply min-h-32;
+    }
+
+    select[multiple] {
+        @apply min-h-32;
+    }
+
+    .checkbox-list {
+        @apply grid gap-2 sm:grid-cols-2;
+    }
+
+    .checkbox-card {
+        @apply flex items-center gap-3 rounded-[10px] border border-[#E2E8F0] bg-white px-3 py-2.5 text-sm font-medium text-[#1E293B] transition hover:border-[#A5B4FC] hover:bg-[#F8FAFC];
+    }
+
+    .relation-empty {
+        @apply rounded-[10px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-3;
+    }
+
+    .code-input {
+        @apply min-h-48 font-mono text-xs leading-5;
+    }
+
+    .error {
+        @apply text-sm font-medium text-red-600;
+    }
+
+    .status {
+        @apply rounded-md border border-[#BBF7D0] bg-[#DCFCE7] p-3 text-sm font-medium text-[#047857];
+    }
+
+    .status.danger {
+        @apply border-[#FEE2E2] bg-[#FEE2E2] text-[#B91C1C];
+    }
+
+    .status.warning {
+        @apply border-[#FEF3C7] bg-[#FFFBEB] text-[#92400E];
+    }
+
+    .status.info {
+        @apply border-[#DBEAFE] bg-[#EFF6FF] text-[#1D4ED8];
+    }
+
+    .flash-region {
+        @apply mb-5 grid gap-3;
+    }
+
+    .flash-alert {
+        @apply flex items-start justify-between gap-4;
+    }
+
+    .flash-dismiss {
+        @apply -m-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-current opacity-70 transition hover:bg-white/50 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-current;
+    }
+
+    .ui-link {
+        @apply font-medium text-[#6366F1] underline decoration-[#E0E7FF] underline-offset-4 transition hover:text-[#4F46E5];
+    }
+
+    .detail-list {
+        @apply mb-5 grid overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_10px_30px_rgba(30,41,59,0.05)] md:grid-cols-[240px_1fr];
+    }
+
+    .detail-list dt,
+    .detail-list dd {
+        @apply m-0 border-b border-[#E2E8F0] px-5 py-4;
+    }
+
+    .detail-list dt {
+        @apply bg-[#F8FAFC] text-sm font-medium text-[#64748B];
+    }
+
+    .detail-list dd {
+        @apply text-sm text-[#1E293B];
+    }
+
+    .related-card {
+        @apply mb-5 overflow-hidden;
+    }
+
+    .related-card ul {
+        @apply m-0 list-none space-y-2 p-0 text-sm text-[#1E293B];
+    }
+
+    .record-card,
+    .summary-card {
+        @apply mb-5 p-5;
+    }
+
+    .record-card h2,
+    .summary-card h2 {
+        @apply mb-4 text-base font-semibold text-[#1E293B];
+    }
+
+    .detail-grid {
+        @apply grid gap-3 md:grid-cols-2;
+    }
+
+    .detail-item {
+        @apply rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3;
+    }
+
+    .detail-item span {
+        @apply block text-xs font-semibold uppercase tracking-wide text-[#64748B];
+    }
+
+    .detail-item strong {
+        @apply mt-1 block text-sm font-semibold text-[#1E293B];
+    }
+
+    .summary-grid {
+        @apply mt-5 grid gap-5 md:grid-cols-2;
+    }
+
+    .summary-grid h3 {
+        @apply mb-2 text-sm font-semibold text-[#1E293B];
+    }
+
+    .summary-grid ul {
+        @apply m-0 list-disc space-y-1 pl-5 text-sm text-[#475569];
+    }
+
+    .resource-links {
+        @apply flex flex-wrap gap-3;
+    }
+
+    .confirm-dialog-backdrop {
+        @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .confirm-dialog-panel {
+        @apply w-full max-w-md rounded-[12px] border border-[#E2E8F0] bg-white p-5 shadow-2xl;
+    }
+
+    .confirm-dialog-panel h2 {
+        @apply text-lg font-semibold text-[#1E293B];
+    }
+
+    .confirm-dialog-panel p {
+        @apply mt-2 text-sm text-[#64748B];
+    }
+
+    .confirm-dialog-actions {
+        @apply mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end;
+    }
+
+    .pagination {
+        @apply mt-5 flex flex-col gap-3 rounded-[12px] border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#64748B] sm:flex-row sm:items-center sm:justify-between;
+    }
+
+    .pagination-pages {
+        @apply flex flex-wrap items-center gap-2;
+    }
+
+    .pagination-link,
+    .pagination-current,
+    .pagination-disabled {
+        @apply inline-flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-3 text-sm font-semibold no-underline;
+    }
+
+    .pagination-link {
+        @apply border-[#E2E8F0] bg-white text-[#1E293B] transition hover:border-[#A5B4FC] hover:bg-[#EEF2FF] hover:text-[#4F46E5];
+    }
+
+    .pagination-current {
+        @apply border-[#6366F1] bg-[#6366F1] text-white;
+    }
+
+    .pagination-disabled {
+        @apply border-[#E2E8F0] bg-[#F8FAFC] text-[#94A3B8];
+    }
+
+    .badge {
+        @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium;
+    }
+
+    .badge.success {
+        @apply border-[#D1FAE5] bg-[#D1FAE5] text-[#047857];
+    }
+
+    .badge.muted {
+        @apply border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B];
+    }
+
+    .image-thumb {
+        @apply h-14 w-14 rounded-[10px] border border-[#E2E8F0] object-cover;
+    }
+
+    .empty-state {
+        @apply flex min-h-52 flex-col items-center justify-center gap-3 px-6 py-10 text-center;
+    }
+
+    .empty-state.compact {
+        @apply min-h-36 rounded-[10px] border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-6;
+    }
+
+    .empty-icon {
+        @apply flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E0E7FF] text-[#4F46E5];
+    }
+
+    .auth-body {
+        @apply grid min-h-screen place-items-center bg-[#F8FAFC] p-6 text-[#1E293B];
+    }
+
+    .auth-card {
+        @apply w-full max-w-md rounded-2xl border border-[#E2E8F0] bg-white p-7 shadow-[0_10px_30px_rgba(30,41,59,0.05)];
+    }
+
+    .auth-brand {
+        @apply mb-6;
+    }
+
+    .auth-card h1 {
+        @apply text-3xl;
+    }
+
+    .auth-card p {
+        @apply mt-2 text-sm leading-6 text-[#64748B];
+    }
+
+    .auth-card form {
+        @apply mt-6 grid gap-4;
+    }
+
+    .auth-card .row {
+        @apply justify-between;
+    }
+}
+CSS;
     }
 
     private function composerJson(string $appName): string
@@ -192,6 +789,8 @@ class LaravelProjectGenerator
                     '@php -r "file_exists(\'.env\') || copy(\'.env.example\', \'.env\');"',
                     '@php artisan key:generate',
                     '@php artisan migrate --force',
+                    '@php artisan db:seed --force',
+                    '@php artisan storage:link',
                     'npm install',
                     'npm run build',
                 ],
@@ -233,6 +832,33 @@ class LaravelProjectGenerator
         ];
 
         return json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    private function packageJson(): string
+    {
+        return <<<'JSON'
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite"
+    },
+    "devDependencies": {
+        "@fontsource/plus-jakarta-sans": "^5.2.8",
+        "@tailwindcss/forms": "^0.5.2",
+        "@tailwindcss/vite": "^4.0.0",
+        "alpinejs": "^3.4.2",
+        "autoprefixer": "^10.4.2",
+        "concurrently": "^9.0.1",
+        "laravel-vite-plugin": "^3.1",
+        "postcss": "^8.4.31",
+        "tailwindcss": "^3.1.0",
+        "vite": "^8.0.0"
+    }
+}
+JSON;
     }
 
     private function envExample(string $appName): string
@@ -360,6 +986,60 @@ XML;
         return $name !== '' ? $name : 'generated_laravel_app';
     }
 
+    private function databaseSeeder(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+
+class DatabaseSeeder extends Seeder
+{
+    use WithoutModelEvents;
+
+    public function run(): void
+    {
+        $this->call([
+            UserSeeder::class,
+        ]);
+    }
+}
+
+PHP;
+    }
+
+    private function userSeeder(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\User;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+
+class UserSeeder extends Seeder
+{
+    public function run(): void
+    {
+        User::query()->updateOrCreate([
+            'email' => 'test@example.com',
+        ], [
+            'name' => 'Test User',
+            'email_verified_at' => now(),
+            'password' => Hash::make('password'),
+            'remember_token' => null,
+        ]);
+    }
+}
+
+PHP;
+    }
+
     private function indent(string $content, int $spaces): string
     {
         $prefix = str_repeat(' ', $spaces);
@@ -461,13 +1141,27 @@ If your MySQL username, password, host, or database name is different, update th
 php artisan migrate
 ```
 
-6. Start the Laravel server:
+6. Seed the default test user:
+
+```bash
+php artisan db:seed
+```
+
+The generated app creates a test user with `test@example.com` and password `password`.
+
+7. Link public storage for generated file and image uploads:
+
+```bash
+php artisan storage:link
+```
+
+8. Start the Laravel server:
 
 ```bash
 php artisan serve
 ```
 
-7. In a second terminal, start Vite:
+9. In a second terminal, start Vite:
 
 ```bash
 npm run dev
@@ -488,10 +1182,26 @@ MD;
 
     private function routes(array $entities): string
     {
-        $firstRoute = $entities[0]['route'];
+        $firstRoute = collect($entities)
+            ->map(fn (array $entity) => $this->entityPrimaryRouteName($entity))
+            ->filter()
+            ->first() ?? 'dashboard';
 
         $resourceRoutes = collect($entities)
-            ->map(fn (array $entity) => "Route::resource('{$entity['route']}', {$entity['name']}Controller::class);")
+            ->map(function (array $entity): ?string {
+                $actions = $this->resourceActions($entity);
+
+                if ($actions === []) {
+                    return null;
+                }
+
+                $quotedActions = collect($actions)
+                    ->map(fn (string $action) => "'{$action}'")
+                    ->implode(', ');
+
+                return "Route::resource('{$entity['route']}', {$entity['name']}Controller::class)->only([{$quotedActions}]);";
+            })
+            ->filter()
             ->implode("\n");
 
         $controllers = collect($entities)
@@ -515,13 +1225,90 @@ Route::get('/dashboard', function () {
 Route::middleware('auth')->group(function () {
 {$this->indent($resourceRoutes, 4)}
     Route::get('/generated', function () {
-        return redirect()->route('{$firstRoute}.index');
+        return redirect()->route('{$firstRoute}');
     })->name('generated.index');
 });
 
 require __DIR__.'/auth.php';
 
 PHP;
+    }
+
+    private function withDefaultFeatures(array $entity): array
+    {
+        $entity['features'] = array_merge(
+            array_fill_keys(self::ENTITY_FEATURES, true),
+            $entity['features'] ?? [],
+        );
+
+        return $entity;
+    }
+
+    private function entityFeature(array $entity, string $feature): bool
+    {
+        return (bool) ($entity['features'][$feature] ?? true);
+    }
+
+    private function resourceActions(array $entity): array
+    {
+        $actions = [];
+
+        if ($this->entityFeature($entity, 'index')) {
+            $actions[] = 'index';
+        }
+
+        if ($this->entityFeature($entity, 'create')) {
+            $actions[] = 'create';
+            $actions[] = 'store';
+        }
+
+        if ($this->entityFeature($entity, 'show')) {
+            $actions[] = 'show';
+        }
+
+        if ($this->entityFeature($entity, 'edit')) {
+            $actions[] = 'edit';
+            $actions[] = 'update';
+        }
+
+        if ($this->entityFeature($entity, 'delete')) {
+            $actions[] = 'destroy';
+        }
+
+        return $actions;
+    }
+
+    private function entityPrimaryRouteName(array $entity): ?string
+    {
+        if ($this->entityFeature($entity, 'index')) {
+            return $entity['route'].'.index';
+        }
+
+        if ($this->entityFeature($entity, 'create')) {
+            return $entity['route'].'.create';
+        }
+
+        return null;
+    }
+
+    private function entityBackRoute(array $entity): string
+    {
+        return $this->entityFeature($entity, 'index')
+            ? "route('{$entity['route']}.index')"
+            : "route('dashboard')";
+    }
+
+    private function entityRedirect(array $entity, string $variable): string
+    {
+        if ($this->entityFeature($entity, 'index')) {
+            return "redirect()->route('{$entity['route']}.index')";
+        }
+
+        if ($this->entityFeature($entity, 'show')) {
+            return "redirect()->route('{$entity['route']}.show', \${$variable})";
+        }
+
+        return "redirect()->route('dashboard')";
     }
 
     private function authRoutes(): string
@@ -570,11 +1357,30 @@ PHP;
             ->filter()
             ->implode("\n");
 
-        $displayField = collect($entity['fields'])
-            ->first(fn (array $field) => in_array($field['type'], ['string', 'email', 'text'], true))['name'] ?? null;
-        $displayExpression = $displayField
-            ? "\$this->{$displayField} ?: (string) \$this->id"
-            : "(string) \$this->id";
+        $displayFields = collect($this->displayNameFields($entity))
+            ->map(fn (string $field) => "            '{$field}',")
+            ->implode("\n");
+        $displayNameMethod = $displayFields
+            ? <<<PHP
+    public function displayName(): string
+    {
+        foreach ([
+{$displayFields}
+        ] as \$displayField) {
+            if (filled(\$this->{\$displayField})) {
+                return (string) \$this->{\$displayField};
+            }
+        }
+
+        return (string) \$this->id;
+    }
+PHP
+            : <<<PHP
+    public function displayName(): string
+    {
+        return (string) \$this->id;
+    }
+PHP;
 
         $castsBlock = $casts ? "\n    protected \$casts = [\n{$casts}\n    ];\n" : '';
         $hiddenBlock = $hidden ? "\n    protected \$hidden = [\n{$hidden}\n    ];\n" : '';
@@ -594,10 +1400,7 @@ class {$entity['name']} extends Model
     ];
 {$castsBlock}{$hiddenBlock}
 {$relationsBlock}
-    public function displayName(): string
-    {
-        return {$displayExpression};
-    }
+{$displayNameMethod}
 }
 
 PHP;
@@ -619,19 +1422,37 @@ PHP;
     {
         return collect($entity['fields'])
             ->mapWithKeys(function (array $field): array {
-                $cast = match ($field['type']) {
-                    'bigInteger', 'integer' => 'integer',
-                    'boolean' => 'boolean',
-                    'date' => 'date',
-                    'datetime' => 'datetime',
-                    'decimal' => 'decimal:2',
-                    'password' => 'hashed',
-                    default => null,
-                };
+                $cast = $this->fieldComponent($field)['cast'];
 
                 return $cast ? [$field['name'] => $cast] : [];
             })
             ->all();
+    }
+
+    private function fieldComponent(array $field): array
+    {
+        return match ($field['type']) {
+            'bigInteger' => ['control' => 'input', 'input' => 'number', 'migration' => 'bigInteger', 'validation' => 'integer', 'cast' => 'integer', 'step' => 1, 'full' => false],
+            'boolean' => ['control' => 'switch', 'input' => 'checkbox', 'migration' => 'boolean', 'validation' => 'boolean', 'cast' => 'boolean', 'step' => null, 'full' => false],
+            'date' => ['control' => 'input', 'input' => 'date', 'migration' => 'date', 'validation' => 'date', 'cast' => 'date', 'step' => null, 'full' => false],
+            'datetime' => ['control' => 'input', 'input' => 'datetime-local', 'migration' => 'dateTime', 'validation' => 'date', 'cast' => 'datetime', 'step' => null, 'full' => false],
+            'decimal' => ['control' => 'input', 'input' => 'number', 'migration' => 'decimal', 'validation' => 'numeric', 'cast' => 'decimal:2', 'step' => '0.01', 'full' => false],
+            'email' => ['control' => 'input', 'input' => 'email', 'migration' => 'string', 'validation' => 'email', 'cast' => null, 'step' => null, 'full' => false],
+            'enum' => ['control' => 'select', 'input' => null, 'migration' => 'string', 'validation' => 'string', 'cast' => null, 'step' => null, 'full' => false],
+            'file' => ['control' => 'file', 'input' => 'file', 'migration' => 'string', 'validation' => 'file', 'cast' => null, 'step' => null, 'full' => true],
+            'float' => ['control' => 'input', 'input' => 'number', 'migration' => 'float', 'validation' => 'numeric', 'cast' => 'float', 'step' => 'any', 'full' => false],
+            'foreignId' => ['control' => 'input', 'input' => 'number', 'migration' => 'foreignId', 'validation' => 'integer', 'cast' => 'integer', 'step' => 1, 'full' => false],
+            'image' => ['control' => 'file', 'input' => 'file', 'migration' => 'string', 'validation' => 'image', 'cast' => null, 'step' => null, 'full' => true],
+            'integer' => ['control' => 'input', 'input' => 'number', 'migration' => 'integer', 'validation' => 'integer', 'cast' => 'integer', 'step' => 1, 'full' => false],
+            'json' => ['control' => 'textarea', 'input' => null, 'migration' => 'json', 'validation' => 'json', 'cast' => 'array', 'step' => null, 'full' => true],
+            'password' => ['control' => 'input', 'input' => 'password', 'migration' => 'string', 'validation' => 'string|min:8', 'cast' => 'hashed', 'step' => null, 'full' => false],
+            'phone' => ['control' => 'input', 'input' => 'tel', 'migration' => 'string', 'validation' => 'string', 'cast' => null, 'step' => null, 'full' => false],
+            'text' => ['control' => 'textarea', 'input' => null, 'migration' => 'text', 'validation' => 'string', 'cast' => null, 'step' => null, 'full' => true],
+            'time' => ['control' => 'input', 'input' => 'time', 'migration' => 'time', 'validation' => 'date_format:H:i', 'cast' => null, 'step' => null, 'full' => false],
+            'timestamp' => ['control' => 'input', 'input' => 'datetime-local', 'migration' => 'timestamp', 'validation' => 'date', 'cast' => 'datetime', 'step' => null, 'full' => false],
+            'url' => ['control' => 'input', 'input' => 'url', 'migration' => 'string', 'validation' => 'url', 'cast' => null, 'step' => null, 'full' => false],
+            default => ['control' => 'input', 'input' => 'text', 'migration' => 'string', 'validation' => 'string', 'cast' => null, 'step' => null, 'full' => false],
+        };
     }
 
     private function hiddenAttributes(array $entity): array
@@ -639,6 +1460,19 @@ PHP;
         return collect($entity['fields'])
             ->where('type', 'password')
             ->pluck('name')
+            ->all();
+    }
+
+    private function displayNameFields(array $entity): array
+    {
+        $availableFields = collect($entity['fields'])
+            ->pluck('name')
+            ->all();
+
+        return collect([$entity['display_field'] ?? null, 'name', 'title', 'email'])
+            ->filter(fn (?string $field): bool => $field !== null && in_array($field, $availableFields, true))
+            ->unique()
+            ->values()
             ->all();
     }
 
@@ -735,7 +1569,7 @@ PHP;
             ->implode(', ');
         $passwordFields = $passwordFields === '' ? '' : $passwordFields;
         $passwordUpdateRules = collect($entity['fields'])
-            ->where('type', 'password')
+            ->whereIn('type', ['password', 'file', 'image'])
             ->pluck('name')
             ->map(fn (string $field) => "                \$rules['{$field}'] = str_replace('required|', 'nullable|', \$rules['{$field}']);")
             ->implode("\n");
@@ -750,31 +1584,62 @@ PHP;
             }
         }
 PHP;
+        $fileFields = collect($entity['fields'])
+            ->whereIn('type', ['file', 'image'])
+            ->pluck('name')
+            ->map(fn (string $field) => "'{$field}'")
+            ->implode(', ');
+        $fileUploadHandling = $fileFields === ''
+            ? ''
+            : <<<PHP
 
-        return <<<PHP
-<?php
+        foreach ([{$fileFields}] as \$fileField) {
+            if (\$request->hasFile(\$fileField)) {
+                \$attributes[\$fileField] = \$request->file(\$fileField)->store(\$fileField, 'public');
+            } elseif (\$ignoreId) {
+                \$attributes->forget(\$fileField);
+            }
+        }
+PHP;
+        $jsonFields = collect($entity['fields'])
+            ->where('type', 'json')
+            ->pluck('name')
+            ->map(fn (string $field) => "'{$field}'")
+            ->implode(', ');
+        $jsonHandling = $jsonFields === ''
+            ? ''
+            : <<<PHP
 
-namespace App\Http\Controllers;
+        foreach ([{$jsonFields}] as \$jsonField) {
+            if (isset(\$attributes[\$jsonField]) && is_string(\$attributes[\$jsonField])) {
+                \$attributes[\$jsonField] = json_decode(\$attributes[\$jsonField], true);
+            }
+        }
+PHP;
+        $indexMethod = $this->entityFeature($entity, 'index')
+            ? <<<PHP
 
-use App\Models\\{$entity['name']};
-{$relationImports}use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\View\View;
-
-class {$entity['name']}Controller extends Controller
-{
     public function index(): View
     {
         \${$collection} = {$entity['name']}::query(){$with}->latest()->paginate(15);
 
         return view('{$route}.index', compact('{$collection}'));
     }
+PHP
+            : '';
+        $createMethod = $this->entityFeature($entity, 'create')
+            ? <<<PHP
 
     public function create(): View
     {
 {$createRelationData}
 {$createReturn}
     }
+PHP
+            : '';
+        $saveRedirect = $this->entityRedirect($entity, $variable);
+        $storeMethod = $this->entityFeature($entity, 'create')
+            ? <<<PHP
 
     public function store(Request \$request): RedirectResponse
     {
@@ -782,20 +1647,33 @@ class {$entity['name']}Controller extends Controller
         \${$variable} = {$entity['name']}::query()->create(\$validated['attributes']);
         \$this->syncRelationships(\${$variable}, \$validated['relations']);
 
-        return redirect()->route('{$route}.show', \${$variable});
+        return {$saveRedirect}
+            ->with('success', '{$entity['name']} created successfully.');
     }
+PHP
+            : '';
+        $showMethod = $this->entityFeature($entity, 'show')
+            ? <<<PHP
 
     public function show({$entity['name']} \${$variable}): View
     {
 {$showLoad}
         return view('{$route}.show', compact('{$variable}'));
     }
+PHP
+            : '';
+        $editMethod = $this->entityFeature($entity, 'edit')
+            ? <<<PHP
 
     public function edit({$entity['name']} \${$variable}): View
     {
 {$createRelationData}
 {$editReturn}
     }
+PHP
+            : '';
+        $updateMethod = $this->entityFeature($entity, 'edit')
+            ? <<<PHP
 
     public function update(Request \$request, {$entity['name']} \${$variable}): RedirectResponse
     {
@@ -803,15 +1681,28 @@ class {$entity['name']}Controller extends Controller
         \${$variable}->update(\$validated['attributes']);
         \$this->syncRelationships(\${$variable}, \$validated['relations']);
 
-        return redirect()->route('{$route}.show', \${$variable});
+        return {$saveRedirect}
+            ->with('success', '{$entity['name']} updated successfully.');
     }
+PHP
+            : '';
+        $destroyRedirect = $this->entityFeature($entity, 'index')
+            ? "redirect()->route('{$route}.index')"
+            : "redirect()->route('dashboard')";
+        $destroyMethod = $this->entityFeature($entity, 'delete')
+            ? <<<PHP
 
     public function destroy({$entity['name']} \${$variable}): RedirectResponse
     {
         \${$variable}->delete();
 
-        return redirect()->route('{$route}.index');
+        return {$destroyRedirect}
+            ->with('success', '{$entity['name']} deleted successfully.');
     }
+PHP
+            : '';
+        $validationMethods = ($this->entityFeature($entity, 'create') || $this->entityFeature($entity, 'edit'))
+            ? <<<PHP
 
     private function validatedData(Request \$request, ?int \$ignoreId = null): array
     {
@@ -826,8 +1717,8 @@ class {$entity['name']}Controller extends Controller
 {$passwordUpdateRules}
         }
 
-        \$validated = \$request->validate(\$rules);
-        \$attributes = collect(\$validated)->except([{$relationKeys}]);{$passwordCleanup}
+        \$validated = \$request->validate(\$rules, \$this->validationMessages());
+        \$attributes = collect(\$validated)->except([{$relationKeys}]);{$passwordCleanup}{$fileUploadHandling}{$jsonHandling}
 
         return [
             'attributes' => \$attributes->all(),
@@ -835,7 +1726,44 @@ class {$entity['name']}Controller extends Controller
         ];
     }
 
+    private function validationMessages(): array
+    {
+        return [
+            'required' => 'Please fill out this field.',
+            'email' => 'Please enter a valid email address.',
+            'url' => 'Please enter a valid URL.',
+            'integer' => 'Please enter a whole number.',
+            'numeric' => 'Please enter a valid number.',
+            'date' => 'Please enter a valid date.',
+            'date_format' => 'Please enter a valid time.',
+            'file' => 'Please choose a valid file.',
+            'image' => 'Please choose a valid image.',
+            'max' => 'This value is too large or too long.',
+            'min' => 'This value is too small or too short.',
+            'unique' => 'This value is already in use.',
+            'exists' => 'Please choose a valid option.',
+            'array' => 'Please choose one or more valid options.',
+            'in' => 'Please choose one of the available options.',
+        ];
+    }
+
 {$syncRelationships}
+PHP
+            : '';
+
+        return <<<PHP
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\\{$entity['name']};
+{$relationImports}use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class {$entity['name']}Controller extends Controller
+{
+{$indexMethod}{$createMethod}{$storeMethod}{$showMethod}{$editMethod}{$updateMethod}{$destroyMethod}{$validationMethods}
 }
 
 PHP;
@@ -879,15 +1807,15 @@ PHP;
         return collect($entity['fields'])
             ->map(function (array $field) use ($entity) {
                 $rule = $field['required'] ? 'required' : 'nullable';
-                $rule .= '|'.$this->validationRule($field['type']);
-                if ($field['unique']) {
+                $rule .= '|'.$this->validationRule($field);
+                if ($this->isUniqueField($field)) {
                     $rule .= '|unique:'.$entity['table'].','.$field['name'];
                 }
 
                 return "            '{$field['name']}' => '{$rule}',";
             })
             ->merge(collect($this->belongsToRelations($entity))
-                ->map(fn (array $relation) => "            '{$relation['foreign_key']}' => 'required|integer|exists:{$relation['target_table']},id',"))
+                ->map(fn (array $relation) => "            '{$relation['foreign_key']}' => 'nullable|integer|exists:{$relation['target_table']},id',"))
             ->merge(collect($this->belongsToManyRelations($entity))
                 ->flatMap(fn (array $relation) => [
                     "            '{$relation['method']}' => 'nullable|array',",
@@ -944,7 +1872,7 @@ PHP;
         $columns = collect($entity['fields'])
             ->map(fn (array $field) => '            '.$this->migrationColumn($field))
             ->merge(collect($this->belongsToRelations($entity))
-                ->map(fn (array $relation) => '            '.$this->relationMigrationColumn($relation)))
+                ->map(fn (array $relation) => '            '.$this->relationColumn($relation)))
             ->implode("\n");
 
         return <<<PHP
@@ -968,6 +1896,42 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('{$entity['table']}');
+    }
+};
+
+PHP;
+    }
+
+    private function foreignKeysMigration(array $entity): string
+    {
+        $foreignKeys = collect($this->belongsToRelations($entity))
+            ->map(fn (array $relation) => '            '.$this->relationForeignKey($relation))
+            ->implode("\n");
+        $dropForeignKeys = collect($this->belongsToRelations($entity))
+            ->map(fn (array $relation) => "            \$table->dropForeign(['{$relation['foreign_key']}']);")
+            ->implode("\n");
+
+        return <<<PHP
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('{$entity['table']}', function (Blueprint \$table) {
+{$foreignKeys}
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('{$entity['table']}', function (Blueprint \$table) {
+{$dropForeignKeys}
+        });
     }
 };
 
@@ -1016,16 +1980,284 @@ PHP;
     private function writeViews(string $outputDir, array $entity): void
     {
         $base = $outputDir.'/resources/views/'.$entity['route'];
-        $this->write($base.'/index.blade.php', $this->indexView($entity));
-        $this->write($base.'/create.blade.php', $this->formView($entity, false));
-        $this->write($base.'/edit.blade.php', $this->formView($entity, true));
-        $this->write($base.'/show.blade.php', $this->showView($entity));
+
+        if ($this->entityFeature($entity, 'index')) {
+            $this->write($base.'/index.blade.php', $this->indexView($entity));
+        }
+
+        if ($this->entityFeature($entity, 'create')) {
+            $this->write($base.'/create.blade.php', $this->formView($entity, false));
+        }
+
+        if ($this->entityFeature($entity, 'edit')) {
+            $this->write($base.'/edit.blade.php', $this->formView($entity, true));
+        }
+
+        if ($this->entityFeature($entity, 'show')) {
+            $this->write($base.'/show.blade.php', $this->showView($entity));
+        }
+    }
+
+    private function writeUiComponents(string $outputDir): void
+    {
+        foreach ($this->uiComponents() as $path => $content) {
+            $this->write($outputDir.'/resources/views/components/ui/'.$path, $content);
+        }
+    }
+
+    private function uiComponents(): array
+    {
+        return [
+            'page-header.blade.php' => <<<'BLADE'
+@props(['eyebrow' => null, 'title', 'description' => null])
+<div {{ $attributes->merge(['class' => 'page-header']) }}>
+    <div class="page-title">
+        @if($eyebrow)
+            <p class="eyebrow">{{ $eyebrow }}</p>
+        @endif
+        <h1>{{ $title }}</h1>
+        @if($description)
+            <p class="muted">{{ $description }}</p>
+        @endif
+    </div>
+    @if(trim($slot) !== '')
+        <div class="actions-row mt-0">{{ $slot }}</div>
+    @endif
+</div>
+BLADE,
+            'card.blade.php' => <<<'BLADE'
+<section {{ $attributes->merge(['class' => 'card']) }}>{{ $slot }}</section>
+BLADE,
+            'button.blade.php' => <<<'BLADE'
+@props(['variant' => 'secondary', 'type' => 'button', 'loading' => false])
+<button type="{{ $type }}" @disabled($attributes->get('disabled') || $loading) {{ $attributes->class(['button', $variant]) }}>
+    {{ $slot }}
+</button>
+BLADE,
+            'icon-button.blade.php' => <<<'BLADE'
+@props(['variant' => 'secondary', 'label'])
+<button type="button" aria-label="{{ $label }}" title="{{ $label }}" {{ $attributes->class(['icon-button', $variant]) }}>
+    {{ $slot }}
+</button>
+BLADE,
+            'input.blade.php' => <<<'BLADE'
+@props(['invalid' => false])
+<input {{ $attributes->class([$invalid ? 'border-[#EF4444] focus:border-[#EF4444] focus:ring-[#EF4444]' : '']) }}>
+BLADE,
+            'textarea.blade.php' => <<<'BLADE'
+@props(['invalid' => false])
+<textarea {{ $attributes->class([$invalid ? 'border-[#EF4444] focus:border-[#EF4444] focus:ring-[#EF4444]' : '']) }}>{{ $slot }}</textarea>
+BLADE,
+            'select.blade.php' => <<<'BLADE'
+@props(['invalid' => false])
+<select {{ $attributes->class([$invalid ? 'border-[#EF4444] focus:border-[#EF4444] focus:ring-[#EF4444]' : '']) }}>{{ $slot }}</select>
+BLADE,
+            'checkbox.blade.php' => <<<'BLADE'
+<input type="checkbox" {{ $attributes }}>
+BLADE,
+            'switch.blade.php' => <<<'BLADE'
+@props(['checked' => false, 'label' => null])
+<label class="inline-flex items-center gap-2">
+    <input type="checkbox" role="switch" @checked($checked) {{ $attributes }}>
+    @if($label)<span>{{ $label }}</span>@endif
+</label>
+BLADE,
+            'label.blade.php' => <<<'BLADE'
+@props(['required' => false])
+<label {{ $attributes->merge(['class' => '']) }}>
+    {{ $slot }} @if($required)<span class="required-mark">*</span>@endif
+</label>
+BLADE,
+            'field-error.blade.php' => <<<'BLADE'
+@props(['messages'])
+@if($messages)
+    @foreach((array) $messages as $message)
+        <p class="error">{{ $message }}</p>
+    @endforeach
+@endif
+BLADE,
+            'form-group.blade.php' => <<<'BLADE'
+@props(['label' => null, 'for' => null, 'required' => false, 'help' => null, 'error' => null])
+<div {{ $attributes }}>
+    @if($label)
+        <label for="{{ $for }}" class="mb-2 block text-sm font-medium text-[#1E293B]">{{ $label }} @if($required)<span class="required-mark">*</span>@endif</label>
+    @endif
+    {{ $slot }}
+    @if($help)<p class="mt-1 text-sm text-[#64748B]">{{ $help }}</p>@endif
+    @if($error)<p class="error mt-1">{{ $error }}</p>@endif
+</div>
+BLADE,
+            'badge.blade.php' => <<<'BLADE'
+@props(['variant' => 'muted'])
+<span {{ $attributes->class(['badge', $variant]) }}>{{ $slot }}</span>
+BLADE,
+            'alert.blade.php' => <<<'BLADE'
+@props(['variant' => 'success'])
+<div role="alert" {{ $attributes->class(['status', $variant]) }}>{{ $slot }}</div>
+BLADE,
+            'table.blade.php' => <<<'BLADE'
+<div {{ $attributes->merge(['class' => 'table-scroll']) }}>{{ $slot }}</div>
+BLADE,
+            'empty-state.blade.php' => <<<'BLADE'
+@props(['title', 'description' => null])
+<div {{ $attributes->merge(['class' => 'empty-state']) }}>
+    <div class="empty-icon">{{ $icon ?? '' }}</div>
+    <div>
+        <h2>{{ $title }}</h2>
+        @if($description)<p class="muted">{{ $description }}</p>@endif
+    </div>
+</div>
+BLADE,
+            'pagination.blade.php' => <<<'BLADE'
+@props(['paginator'])
+@if($paginator->hasPages())
+    @php
+        $start = max($paginator->currentPage() - 2, 1);
+        $end = min($start + 4, $paginator->lastPage());
+        $start = max($end - 4, 1);
+    @endphp
+
+    <nav {{ $attributes->merge(['class' => 'pagination']) }} aria-label="Pagination">
+        <div>
+            Showing {{ $paginator->firstItem() }} to {{ $paginator->lastItem() }} of {{ $paginator->total() }}
+        </div>
+
+        <div class="pagination-pages">
+            @if($paginator->onFirstPage())
+                <span class="pagination-disabled">Previous</span>
+            @else
+                <a class="pagination-link" href="{{ $paginator->previousPageUrl() }}" rel="prev">Previous</a>
+            @endif
+
+            @if($start > 1)
+                <a class="pagination-link" href="{{ $paginator->url(1) }}">1</a>
+                @if($start > 2)
+                    <span class="pagination-disabled">...</span>
+                @endif
+            @endif
+
+            @foreach(range($start, $end) as $page)
+                @if($page == $paginator->currentPage())
+                    <span class="pagination-current" aria-current="page">{{ $page }}</span>
+                @else
+                    <a class="pagination-link" href="{{ $paginator->url($page) }}">{{ $page }}</a>
+                @endif
+            @endforeach
+
+            @if($end < $paginator->lastPage())
+                @if($end < $paginator->lastPage() - 1)
+                    <span class="pagination-disabled">...</span>
+                @endif
+                <a class="pagination-link" href="{{ $paginator->url($paginator->lastPage()) }}">{{ $paginator->lastPage() }}</a>
+            @endif
+
+            @if($paginator->hasMorePages())
+                <a class="pagination-link" href="{{ $paginator->nextPageUrl() }}" rel="next">Next</a>
+            @else
+                <span class="pagination-disabled">Next</span>
+            @endif
+        </div>
+    </nav>
+@endif
+BLADE,
+            'confirm-dialog.blade.php' => <<<'BLADE'
+@props([
+    'action',
+    'title' => 'Delete record',
+    'message' => 'This action cannot be undone.',
+    'confirmLabel' => 'Delete',
+    'triggerLabel' => 'Delete',
+    'triggerClass' => 'icon-button danger',
+    'confirmClass' => 'button danger',
+])
+
+<div x-data="{ open: false }" class="inline">
+    <button type="button" class="{{ $triggerClass }}" aria-label="{{ $triggerLabel }}" title="{{ $triggerLabel }}" @click="open = true">
+        {{ $slot }}
+    </button>
+
+    <template x-teleport="body">
+        <div class="confirm-dialog-backdrop" x-show="open" x-cloak x-transition.opacity @keydown.escape.window="open = false" role="dialog" aria-modal="true">
+            <div class="confirm-dialog-panel" @click.outside="open = false">
+                <h2>{{ $title }}</h2>
+                <p>{{ $message }}</p>
+
+                <form method="POST" action="{{ $action }}">
+                    @csrf
+                    @method('DELETE')
+
+                    <div class="confirm-dialog-actions">
+                        <button type="button" class="button" @click="open = false">Cancel</button>
+                        <button type="submit" class="{{ $confirmClass }}">{{ $confirmLabel }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </template>
+</div>
+BLADE,
+            'breadcrumbs.blade.php' => <<<'BLADE'
+@props(['items' => []])
+<nav aria-label="Breadcrumb" {{ $attributes }}>
+    <ol class="flex flex-wrap items-center gap-2 text-sm text-[#64748B]">
+        @foreach($items as $label => $url)
+            <li>
+                @if($url)
+                    <a class="ui-link" href="{{ $url }}">{{ $label }}</a>
+                @else
+                    <span>{{ $label }}</span>
+                @endif
+            </li>
+        @endforeach
+    </ol>
+</nav>
+BLADE,
+        ];
     }
 
     private function indexView(array $entity): string
     {
+        $plusIcon = $this->icon('plus');
+        $showIcon = $this->icon('show');
+        $editIcon = $this->icon('edit');
+        $trashIcon = $this->icon('trash');
+        $emptyIcon = $this->icon('empty');
+        $createButton = $this->entityFeature($entity, 'create')
+            ? "\n        <a class=\"button primary\" href=\"{{ route('{$entity['route']}.create') }}\">{$plusIcon}<span>New {$entity['name']}</span></a>"
+            : '';
+        $actionLinks = collect([
+            $this->entityFeature($entity, 'show')
+                ? "<a class=\"icon-button\" href=\"{{ route('{$entity['route']}.show', \${$entity['variable']}) }}\" aria-label=\"View {$entity['name']}\" title=\"View\">{$showIcon}</a>"
+                : null,
+            $this->entityFeature($entity, 'edit')
+                ? "<a class=\"icon-button primary\" href=\"{{ route('{$entity['route']}.edit', \${$entity['variable']}) }}\" aria-label=\"Edit {$entity['name']}\" title=\"Edit\">{$editIcon}</a>"
+                : null,
+            $this->entityFeature($entity, 'delete')
+                ? <<<BLADE
+                        <x-ui.confirm-dialog
+                            action="{{ route('{$entity['route']}.destroy', \${$entity['variable']}) }}"
+                            title="Delete {$entity['name']}"
+                            message="This permanently removes the record."
+                            trigger-label="Delete {$entity['name']}"
+                        >
+                            {$trashIcon}
+                        </x-ui.confirm-dialog>
+BLADE
+                : null,
+        ])->filter()->implode("\n                        ");
+        $actionsHeader = $actionLinks ? "\n                    <th class=\"actions-heading\">Actions</th>" : '';
+        $actionsCell = $actionLinks
+            ? <<<BLADE
+
+                    <td class="actions">
+                        <div class="action-list">
+                            {$actionLinks}
+                        </div>
+                    </td>
+BLADE
+            : '';
         $headers = collect($entity['fields'])
-            ->map(fn (array $field) => '<th>'.$field['label'].'</th>')
+            ->map(fn (array $field) => $this->indexHeaderCell($field))
             ->merge(collect($this->indexRelations($entity))
                 ->map(fn (array $relation) => '<th>'.$relation['target'].'</th>'))
             ->implode("\n                ");
@@ -1034,44 +2266,67 @@ PHP;
             ->merge(collect($this->indexRelations($entity))
                 ->map(fn (array $relation) => $this->indexRelationCell($entity, $relation)))
             ->implode("\n                ");
+        $columnCount = count($entity['fields']) + count($this->indexRelations($entity)) + ($actionLinks ? 1 : 0);
+        $columnCount = max(1, $columnCount);
 
         return <<<BLADE
 @extends('layouts.app')
 
 @section('content')
     <div class="page-header">
-        <div>
+        <div class="page-title">
             <p class="eyebrow">Records</p>
             <h1>{$entity['name']}</h1>
-        </div>
-        <a class="button primary" href="{{ route('{$entity['route']}.create') }}">Create</a>
+            <p class="muted">Manage generated {$entity['name']} records.</p>
+        </div>{$createButton}
     </div>
 
     <div class="card table-card">
-        <table>
-            <thead>
-                <tr>
-                    {$headers}
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach(\${$entity['collection']} as \${$entity['variable']})
-                <tr>
-                    {$cells}
-                    <td class="actions">
-                        <a href="{{ route('{$entity['route']}.show', \${$entity['variable']}) }}">Show</a>
-                        <a href="{{ route('{$entity['route']}.edit', \${$entity['variable']}) }}">Edit</a>
-                    </td>
-                </tr>
-                @endforeach
-            </tbody>
-        </table>
+        <div class="table-toolbar">
+            <div>
+                <div class="table-title">{$entity['name']} records</div>
+                <div class="table-meta">{{ \${$entity['collection']}->total() }} total</div>
+            </div>
+        </div>
+
+        <x-ui.table>
+            <table>
+                <thead>
+                    <tr>
+                        {$headers}
+                        {$actionsHeader}
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse(\${$entity['collection']} as \${$entity['variable']})
+                    <tr>
+                        {$cells}
+                        {$actionsCell}
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="{$columnCount}">
+                            <div class="empty-state">
+                                <div class="empty-icon">{$emptyIcon}</div>
+                                <div>
+                                    <h2>No {$entity['name']} records yet</h2>
+                                    <p class="muted">Create the first record to populate this table.</p>
+                                    @if(\Illuminate\Support\Facades\Route::has('{$entity['route']}.create'))
+                                        <div class="actions-row justify-center">
+                                            <a class="button primary" href="{{ route('{$entity['route']}.create') }}">{$plusIcon}<span>New {$entity['name']}</span></a>
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </x-ui.table>
     </div>
 
-    <div class="pagination">
-        {{ \${$entity['collection']}->links() }}
-    </div>
+    <x-ui.pagination :paginator="\${$entity['collection']}" />
 @endsection
 
 BLADE;
@@ -1084,6 +2339,10 @@ BLADE;
             ? "{{ route('{$entity['route']}.update', \${$variable}) }}"
             : "{{ route('{$entity['route']}.store') }}";
         $method = $editing ? "\n        @method('PUT')" : '';
+        $backHref = '{{ '.$this->entityBackRoute($entity).' }}';
+        $enctype = collect($entity['fields'])->contains(fn (array $field): bool => in_array($field['type'], ['file', 'image'], true))
+            ? ' enctype="multipart/form-data"'
+            : '';
 
         $inputs = collect($entity['fields'])
             ->map(fn (array $field) => $this->fieldInput($field, $editing, $variable))
@@ -1094,25 +2353,39 @@ BLADE;
             ->implode("\n\n");
 
         $title = $editing ? 'Edit '.$entity['name'] : 'Create '.$entity['name'];
+        $submitLabel = $editing ? 'Save Changes' : 'Create '.$entity['name'];
 
         return <<<BLADE
 @extends('layouts.app')
 
 @section('content')
     <div class="page-header">
-        <div>
+        <div class="page-title">
             <p class="eyebrow">Form</p>
             <h1>{$title}</h1>
+            <p class="muted">Fill out the fields below and save the record.</p>
         </div>
-        <a class="button" href="{{ route('{$entity['route']}.index') }}">Back</a>
+        <a class="button" href="{$backHref}">Back</a>
     </div>
 
-    <form class="card form-card" method="POST" action="{$action}">
+    <form class="card form-card" method="POST" action="{$action}"{$enctype}>
         @csrf{$method}
 
-{$inputs}
+        @if (\$errors->any())
+            <div class="status danger">
+                Please review the highlighted fields and try again.
+            </div>
+        @endif
 
-        <button class="button primary" type="submit">Save</button>
+        <div class="form-section">
+            <h2 class="form-section-title">{$entity['name']} information</h2>
+{$inputs}
+        </div>
+
+        <div class="form-actions">
+            <a class="button" href="{$backHref}">Cancel</a>
+            <button class="button primary" type="submit">{$submitLabel}</button>
+        </div>
     </form>
 @endsection
 
@@ -1121,122 +2394,264 @@ BLADE;
 
     private function showView(array $entity): string
     {
+        $editIcon = $this->icon('edit');
+        $trashIcon = $this->icon('trash');
+        $backIcon = $this->icon('arrow-left');
         $rows = collect($entity['fields'])
-            ->map(fn (array $field) => "<dt>{$field['label']}</dt>\n        <dd>".$this->fieldDisplayValue($entity, $field).'</dd>')
+            ->map(fn (array $field) => $this->detailItem($field['label'], $this->fieldDisplayValue($entity, $field)))
             ->merge(collect($this->belongsToRelations($entity))
-                ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}</dd>"))
+                ->map(fn (array $relation) => $this->detailItem($relation['target'], "{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}")))
             ->merge(collect($this->hasOneRelations($entity))
-                ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}</dd>"))
-            ->merge(collect($this->belongsToManyRelations($entity))
-                ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}->map->displayName()->join(', ') ?: '-' }}</dd>"))
+                ->map(fn (array $relation) => $this->detailItem($relation['target'], "{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}")))
             ->implode("\n        ");
-        $hasManySections = collect($this->hasManyRelations($entity))
-            ->map(fn (array $relation) => $this->hasManyShowSection($entity, $relation))
+        $relatedSections = collect($this->hasManyRelations($entity))
+            ->merge($this->belongsToManyRelations($entity))
+            ->map(fn (array $relation) => $this->relatedRecordsSection($entity, $relation))
             ->implode("\n");
+        $backHref = '{{ '.$this->entityBackRoute($entity).' }}';
+        $editAction = $this->entityFeature($entity, 'edit')
+            ? "<a class=\"button primary\" href=\"{{ route('{$entity['route']}.edit', \${$entity['variable']}) }}\">{$editIcon}<span>Edit</span></a>"
+            : '';
+        $deleteAction = $this->entityFeature($entity, 'delete')
+            ? <<<BLADE
+        <x-ui.confirm-dialog
+            action="{{ route('{$entity['route']}.destroy', \${$entity['variable']}) }}"
+            title="Delete {$entity['name']}"
+            message="This permanently removes the record."
+            trigger-label="Delete {$entity['name']}"
+            trigger-class="button danger"
+        >
+            {$trashIcon}<span>Delete</span>
+        </x-ui.confirm-dialog>
+BLADE
+            : '';
+        $headerActions = trim(<<<BLADE
+        <div class="top-actions">
+            {$editAction}
+            {$deleteAction}
+        </div>
+BLADE);
 
         return <<<BLADE
 @extends('layouts.app')
 
 @section('content')
-    <div class="page-header">
-        <div>
-            <p class="eyebrow">Details</p>
-            <h1>{$entity['name']}</h1>
+    <header class="detail-header">
+        <div class="detail-header-top">
+            <div class="detail-breadcrumbs">
+                <a class="back-button" href="{$backHref}" aria-label="Back">{$backIcon}</a>
+                <a class="ui-link" href="{$backHref}">{$entity['name']}</a>
+                <span>/</span>
+                <span>{{ \${$entity['variable']}->displayName() }}</span>
+            </div>
+{$headerActions}
         </div>
-        <a class="button" href="{{ route('{$entity['route']}.index') }}">Back</a>
-    </div>
 
-    <dl class="card detail-list">
+        <div class="page-title mt-5">
+            <h1>{{ \${$entity['variable']}->displayName() }}</h1>
+            <p class="muted">Review the saved values and related records.</p>
+        </div>
+    </header>
+
+    <section class="card record-card">
+        <h2>Information</h2>
+        <div class="detail-grid">
         {$rows}
-    </dl>
+        </div>
+    </section>
 
-{$hasManySections}
-
-    <div class="actions-row">
-        <a class="button primary" href="{{ route('{$entity['route']}.edit', \${$entity['variable']}) }}">Edit</a>
-        <form method="POST" action="{{ route('{$entity['route']}.destroy', \${$entity['variable']}) }}">
-        @csrf
-        @method('DELETE')
-            <button class="button danger" type="submit">Delete</button>
-        </form>
-    </div>
+{$relatedSections}
 @endsection
 
 BLADE;
     }
 
+    private function detailItem(string $label, string $value): string
+    {
+        return <<<BLADE
+            <div class="detail-item">
+                <span>{$label}</span>
+                <strong>{$value}</strong>
+            </div>
+BLADE;
+    }
+
     private function fieldInput(array $field, bool $editing, string $variable): string
     {
+        $component = $this->fieldComponent($field);
         $value = $this->fieldInputValue($field, $editing, $variable);
+        $label = $this->inputLabel($field['label'], $field['required']);
+        $attributes = $this->fieldInputAttributes($field, $component, $editing);
+        $wrapperClass = $component['full'] ? ' class="field-full"' : '';
+        $help = $this->fieldHelp($field);
+        $id = 'field_'.$field['name'];
+        $errorAttributes = "@error('{$field['name']}') aria-invalid=\"true\" aria-describedby=\"{$id}_error\" @enderror";
+        $error = "@error('{$field['name']}') <div id=\"{$id}_error\" class=\"error\">{{ \$message }}</div> @enderror";
 
-        if ($field['type'] === 'boolean') {
+        if ($component['control'] === 'switch') {
             return <<<BLADE
-        <label>
-            <span>{$field['label']}</span>
-            <select name="{$field['name']}">
+        <div{$wrapperClass}>
+            <input type="hidden" name="{$field['name']}" value="0">
+            <label for="{$id}" class="inline-flex items-center gap-3">
+                <input id="{$id}" type="checkbox" name="{$field['name']}" value="1" @checked((string) {$value} === '1') {$errorAttributes}>
+                <span>{$label}</span>
+            </label>
+            {$help}
+            {$error}
+        </div>
+BLADE;
+        }
+
+        if ($component['control'] === 'select') {
+            $options = collect($field['metadata']['options'] ?? [])
+                ->map(fn (string $option) => "                <option value=\"{$option}\" @selected((string) {$value} === '{$option}')>{$option}</option>")
+                ->implode("\n");
+
+            return <<<BLADE
+        <div{$wrapperClass}>
+            <label for="{$id}">{$label}</label>
+            <select id="{$id}" name="{$field['name']}"{$attributes} {$errorAttributes}>
                 <option value="">Choose {$field['label']}</option>
-                <option value="1" @selected((string) {$value} === '1')>Yes</option>
-                <option value="0" @selected((string) {$value} === '0')>No</option>
+{$options}
             </select>
-        </label>
-        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+            {$help}
+            {$error}
+        </div>
 BLADE;
         }
 
-        if ($field['type'] === 'text') {
+        if ($component['control'] === 'textarea') {
+            $textareaClass = $field['type'] === 'json' ? ' class="code-input"' : '';
             return <<<BLADE
-        <label>
-            <span>{$field['label']}</span>
-            <textarea name="{$field['name']}">{{ {$value} }}</textarea>
-        </label>
-        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+        <div{$wrapperClass}>
+            <label for="{$id}">{$label}</label>
+            <textarea id="{$id}" name="{$field['name']}"{$attributes}{$textareaClass} {$errorAttributes}>{{ {$value} }}</textarea>
+            {$help}
+            {$error}
+        </div>
 BLADE;
         }
 
-        $type = match ($field['type']) {
-            'bigInteger', 'decimal', 'integer' => 'number',
-            'date' => 'date',
-            'datetime' => 'datetime-local',
-            'email' => 'email',
-            'password' => 'password',
-            default => 'text',
-        };
-        $step = match ($field['type']) {
-            'bigInteger', 'integer' => ' step="1"',
-            'decimal' => ' step="0.01"',
-            default => '',
-        };
-        $autocomplete = $field['type'] === 'password' ? ' autocomplete="new-password"' : '';
+        if ($component['control'] === 'file') {
+            return <<<BLADE
+        <div{$wrapperClass}>
+            <label for="{$id}">{$label}</label>
+            <input id="{$id}" type="file" name="{$field['name']}"{$attributes} {$errorAttributes}>
+            {$help}
+            {$error}
+        </div>
+BLADE;
+        }
+
+        $type = $component['input'];
+        $autocomplete = $this->autocompleteAttribute($field);
         $valueAttribute = $field['type'] === 'password' && $editing
             ? ''
             : ' value="{{ '.$value.' }}"';
 
         return <<<BLADE
-        <label>
-            <span>{$field['label']}</span>
-            <input type="{$type}" name="{$field['name']}"{$step}{$autocomplete}{$valueAttribute}>
-        </label>
-        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+        <div{$wrapperClass}>
+            <label for="{$id}">{$label}</label>
+            <input id="{$id}" type="{$type}" name="{$field['name']}"{$autocomplete}{$valueAttribute}{$attributes} {$errorAttributes}>
+            {$help}
+            {$error}
+        </div>
 BLADE;
+    }
+
+    private function inputLabel(string $label, bool $required): string
+    {
+        return $required ? "{$label} <span class=\"required-mark\">*</span>" : $label;
+    }
+
+    private function autocompleteAttribute(array $field): string
+    {
+        return match ($field['type']) {
+            'email' => ' autocomplete="email"',
+            'password' => ' autocomplete="new-password"',
+            'phone' => ' autocomplete="tel"',
+            'url' => ' autocomplete="url"',
+            default => in_array($field['name'], ['name', 'title'], true)
+                ? ' autocomplete="name"'
+                : '',
+        };
+    }
+
+    private function fieldInputAttributes(array $field, array $component, bool $editing): string
+    {
+        $metadata = $field['metadata'] ?? [];
+        $attributes = [];
+
+        if (in_array($field['type'] ?? null, ['file', 'image'], true)) {
+            if (isset($metadata['accept']) && $metadata['accept'] !== '') {
+                $attributes[] = 'accept="'.e((string) $metadata['accept']).'"';
+            } elseif (($field['type'] ?? null) === 'image') {
+                $attributes[] = 'accept="image/*"';
+            }
+
+            return $attributes === [] ? '' : ' '.implode(' ', $attributes);
+        }
+
+        foreach (['min', 'max', 'step', 'placeholder'] as $key) {
+            if (isset($metadata[$key]) && $metadata[$key] !== '') {
+                $attributes[] = $key.'="'.e((string) $metadata[$key]).'"';
+            }
+        }
+
+        if ($component['step'] !== null && !isset($metadata['step'])) {
+            $attributes[] = 'step="'.e((string) $component['step']).'"';
+        }
+
+        if (isset($metadata['minLength'])) {
+            $attributes[] = 'minlength="'.e((string) $metadata['minLength']).'"';
+        }
+
+        if (isset($metadata['maxLength'])) {
+            $attributes[] = 'maxlength="'.e((string) $metadata['maxLength']).'"';
+        }
+
+        return $attributes === [] ? '' : ' '.implode(' ', $attributes);
+    }
+
+    private function fieldHelp(array $field): string
+    {
+        $help = $field['metadata']['help'] ?? null;
+
+        return $help ? '<span class="muted">'.e((string) $help).'</span>' : '';
     }
 
     private function fieldInputValue(array $field, bool $editing, string $variable): string
     {
+        $default = array_key_exists('default', $field['metadata'] ?? [])
+            ? ", ".var_export($field['metadata']['default'], true)
+            : '';
+
         if (!$editing || $field['type'] === 'password') {
-            return "old('{$field['name']}')";
+            return "old('{$field['name']}'{$default})";
         }
 
         return match ($field['type']) {
             'boolean' => "old('{$field['name']}', \${$variable}->{$field['name']} === null ? '' : (string) (int) \${$variable}->{$field['name']})",
             'date' => "old('{$field['name']}', optional(\${$variable}->{$field['name']})->format('Y-m-d'))",
             'datetime' => "old('{$field['name']}', optional(\${$variable}->{$field['name']})->format('Y-m-d\\TH:i'))",
+            'timestamp' => "old('{$field['name']}', optional(\${$variable}->{$field['name']})->format('Y-m-d\\TH:i'))",
+            'json' => "old('{$field['name']}', json_encode(\${$variable}->{$field['name']}, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))",
             default => "old('{$field['name']}', \${$variable}->{$field['name']})",
         };
     }
 
     private function indexFieldCell(array $entity, array $field): string
     {
-        return '<td>'.$this->fieldDisplayValue($entity, $field).'</td>';
+        $class = in_array($field['type'], ['bigInteger', 'decimal', 'integer'], true) ? ' class="numeric-cell"' : '';
+
+        return '<td'.$class.'>'.$this->fieldDisplayValue($entity, $field).'</td>';
+    }
+
+    private function indexHeaderCell(array $field): string
+    {
+        $class = in_array($field['type'], ['bigInteger', 'decimal', 'integer'], true) ? ' class="numeric-cell"' : '';
+
+        return '<th'.$class.'>'.$field['label'].'</th>';
     }
 
     private function fieldDisplayValue(array $entity, array $field): string
@@ -1245,10 +2660,15 @@ BLADE;
         $name = $field['name'];
 
         return match ($field['type']) {
-            'boolean' => "{{ \${$variable}->{$name} === null ? '-' : (\${$variable}->{$name} ? 'Yes' : 'No') }}",
+            'boolean' => "{!! \${$variable}->{$name} === null ? '<span class=\"badge muted\">Not set</span>' : (\${$variable}->{$name} ? '<span class=\"badge success\">Yes</span>' : '<span class=\"badge muted\">No</span>') !!}",
             'date' => "{{ optional(\${$variable}->{$name})->format('Y-m-d') ?? '-' }}",
             'datetime' => "{{ optional(\${$variable}->{$name})->format('Y-m-d H:i') ?? '-' }}",
+            'timestamp' => "{{ optional(\${$variable}->{$name})->format('Y-m-d H:i') ?? '-' }}",
+            'file' => "{!! \${$variable}->{$name} ? '<a class=\"ui-link\" href=\"'.\\Illuminate\\Support\\Facades\\Storage::url(\${$variable}->{$name}).'\" target=\"_blank\" rel=\"noreferrer\">Open file</a>' : '-' !!}",
+            'image' => "{!! \${$variable}->{$name} ? '<a class=\"ui-link\" href=\"'.\\Illuminate\\Support\\Facades\\Storage::url(\${$variable}->{$name}).'\" target=\"_blank\" rel=\"noreferrer\"><img class=\"image-thumb\" src=\"'.\\Illuminate\\Support\\Facades\\Storage::url(\${$variable}->{$name}).'\" alt=\"{$field['label']}\"></a>' : '-' !!}",
+            'json' => "{{ \${$variable}->{$name} ? \\Illuminate\\Support\\Str::limit(json_encode(\${$variable}->{$name}, JSON_UNESCAPED_SLASHES), 80) : '-' }}",
             'password' => "{{ \${$variable}->{$name} ? 'Set' : '-' }}",
+            'text' => "{{ \${$variable}->{$name} ? \\Illuminate\\Support\\Str::limit(\${$variable}->{$name}, 90) : '-' }}",
             default => "{{ \${$variable}->{$name} }}",
         };
     }
@@ -1258,11 +2678,13 @@ BLADE;
         $value = $editing
             ? "old('{$relation['foreign_key']}', \${$variable}->{$relation['foreign_key']})"
             : "old('{$relation['foreign_key']}')";
+        $id = 'field_'.$relation['foreign_key'];
+        $targetRoute = Str::kebab(Str::pluralStudly($relation['target']));
 
         return <<<BLADE
-        <label>
-            <span>{$relation['target']}</span>
-            <select name="{$relation['foreign_key']}">
+        <div>
+            <label for="{$id}">{$relation['target']}</label>
+            <select id="{$id}" name="{$relation['foreign_key']}" @disabled(\${$relation['target_collection']}->isEmpty()) @error('{$relation['foreign_key']}') aria-invalid="true" aria-describedby="{$id}_error" @enderror>
                 <option value="">Choose {$relation['target']}</option>
                 @foreach(\${$relation['target_collection']} as \${$relation['target_variable']})
                     <option value="{{ \${$relation['target_variable']}->id }}" @selected((string) {$value} === (string) \${$relation['target_variable']}->id)>
@@ -1270,8 +2692,14 @@ BLADE;
                     </option>
                 @endforeach
             </select>
-        </label>
-        @error('{$relation['foreign_key']}') <div class="error">{{ \$message }}</div> @enderror
+            @if(\${$relation['target_collection']}->isEmpty())
+                <p class="muted">No {$relation['target']} records yet. You can save this record now and connect it later.</p>
+                @if(\Illuminate\Support\Facades\Route::has('{$targetRoute}.create'))
+                    <a class="ui-link" href="{{ route('{$targetRoute}.create') }}">Add {$relation['target']}</a>
+                @endif
+            @endif
+            @error('{$relation['foreign_key']}') <div id="{$id}_error" class="error">{{ \$message }}</div> @enderror
+        </div>
 BLADE;
     }
 
@@ -1281,20 +2709,42 @@ BLADE;
             ? "collect(old('{$relation['method']}', \${$variable}->{$relation['method']}->pluck('id')->all()))"
             : "collect(old('{$relation['method']}', []))";
 
+        $id = 'field_'.$relation['method'];
+        $targetRoute = Str::kebab(Str::pluralStudly($relation['target']));
+
         return <<<BLADE
         @php(\$selected{$relation['target_collection']} = {$selectedExpression}->map(fn (\$id) => (string) \$id))
-        <label>
-            <span>{$relation['target']}</span>
-            <select name="{$relation['method']}[]" multiple>
-                @foreach(\${$relation['target_collection']} as \${$relation['target_variable']})
-                    <option value="{{ \${$relation['target_variable']}->id }}" @selected(\$selected{$relation['target_collection']}->contains((string) \${$relation['target_variable']}->id))>
-                        {{ \${$relation['target_variable']}->displayName() }}
-                    </option>
-                @endforeach
-            </select>
-        </label>
-        @error('{$relation['method']}') <div class="error">{{ \$message }}</div> @enderror
-        @error('{$relation['method']}.*') <div class="error">{{ \$message }}</div> @enderror
+        <fieldset class="field-full">
+            <legend>{$relation['target']}</legend>
+            @if(\${$relation['target_collection']}->isEmpty())
+                <div class="relation-empty">
+                    <p class="muted">No {$relation['target']} records yet. Save this record now and attach them later.</p>
+                    @if(\Illuminate\Support\Facades\Route::has('{$targetRoute}.create'))
+                        <a class="ui-link" href="{{ route('{$targetRoute}.create') }}">Add {$relation['target']}</a>
+                    @endif
+                </div>
+            @elseif(\${$relation['target_collection']}->count() <= 12)
+                <div class="checkbox-list" @error('{$relation['method']}') aria-invalid="true" aria-describedby="{$id}_error" @enderror>
+                    @foreach(\${$relation['target_collection']} as \${$relation['target_variable']})
+                        <label for="{$id}_{{ \${$relation['target_variable']}->id }}" class="checkbox-card">
+                            <input id="{$id}_{{ \${$relation['target_variable']}->id }}" type="checkbox" name="{$relation['method']}[]" value="{{ \${$relation['target_variable']}->id }}" @checked(\$selected{$relation['target_collection']}->contains((string) \${$relation['target_variable']}->id))>
+                            <span>{{ \${$relation['target_variable']}->displayName() }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            @else
+                <select id="{$id}" name="{$relation['method']}[]" multiple @error('{$relation['method']}') aria-invalid="true" aria-describedby="{$id}_error" @enderror>
+                    @foreach(\${$relation['target_collection']} as \${$relation['target_variable']})
+                        <option value="{{ \${$relation['target_variable']}->id }}" @selected(\$selected{$relation['target_collection']}->contains((string) \${$relation['target_variable']}->id))>
+                            {{ \${$relation['target_variable']}->displayName() }}
+                        </option>
+                    @endforeach
+                </select>
+                <p class="muted">Hold Ctrl or Command to select multiple records.</p>
+            @endif
+            @error('{$relation['method']}') <div id="{$id}_error" class="error">{{ \$message }}</div> @enderror
+            @error('{$relation['method']}.*') <div class="error">{{ \$message }}</div> @enderror
+        </fieldset>
 BLADE;
     }
 
@@ -1315,100 +2765,195 @@ BLADE;
         return '<td>-</td>';
     }
 
-    private function hasManyShowSection(array $entity, array $relation): string
+    private function relatedRecordsSection(array $entity, array $relation): string
     {
+        $targetRoute = Str::kebab(Str::pluralStudly($relation['target']));
+        $emptyIcon = $this->icon('empty');
+        $plusIcon = $this->icon('plus');
+        $showIcon = $this->icon('show');
+
         return <<<BLADE
     <section class="card related-card">
-        <h2>{$relation['target']}</h2>
-        <ul>
-        @forelse(\${$entity['variable']}->{$relation['method']} as \${$relation['target_variable']})
-            <li>{{ \${$relation['target_variable']}->displayName() }}</li>
-        @empty
-            <li>No related {$relation['target']} records.</li>
-        @endforelse
-        </ul>
+        <div class="table-toolbar">
+            <div>
+                <h2>{$relation['target']}</h2>
+                <p class="muted">{{ \${$entity['variable']}->{$relation['method']}->count() }} related records</p>
+            </div>
+            @if(\Illuminate\Support\Facades\Route::has('{$targetRoute}.create'))
+                <a class="button primary" href="{{ route('{$targetRoute}.create') }}">{$plusIcon}<span>Add {$relation['target']}</span></a>
+            @endif
+        </div>
+
+        <x-ui.table>
+            <table>
+                <thead>
+                    <tr>
+                        <th>{$relation['target']}</th>
+                        <th>Created</th>
+                        <th class="actions-heading">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse(\${$entity['variable']}->{$relation['method']} as \${$relation['target_variable']})
+                        <tr>
+                            <td>{{ \${$relation['target_variable']}->displayName() }}</td>
+                            <td>{{ optional(\${$relation['target_variable']}->created_at)->format('Y-m-d H:i') ?? '-' }}</td>
+                            <td class="actions">
+                                <div class="action-list">
+                                    @if(\Illuminate\Support\Facades\Route::has('{$targetRoute}.show'))
+                                        <a class="icon-button" href="{{ route('{$targetRoute}.show', \${$relation['target_variable']}) }}" aria-label="View {$relation['target']}" title="View">{$showIcon}</a>
+                                    @else
+                                        <span class="badge muted">No action</span>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="3">
+                                <div class="empty-state">
+                                    <div class="empty-icon">{$emptyIcon}</div>
+                                    <div>
+                                        <h2>No related {$relation['target']} records</h2>
+                                        <p class="muted">Related records will appear here after they are added.</p>
+                                        @if(\Illuminate\Support\Facades\Route::has('{$targetRoute}.create'))
+                                            <div class="actions-row justify-center">
+                                                <a class="button primary" href="{{ route('{$targetRoute}.create') }}">{$plusIcon}<span>Add {$relation['target']}</span></a>
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </x-ui.table>
     </section>
 
 BLADE;
     }
 
+    private function icon(string $name): string
+    {
+        return match ($name) {
+            'arrow-left' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+            'plus' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+            'show' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+            'edit' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>',
+            'trash' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>',
+            'table' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>',
+            'dashboard' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="8" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="15" width="7" height="6" rx="2"/></svg>',
+            'menu' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+            'x' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+            'logout' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 3v18"/></svg>',
+            'empty' => '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>',
+            default => '',
+        };
+    }
+
     private function layout(string $appName, array $entities): string
     {
+        $menuIcon = $this->icon('menu');
+        $closeIcon = $this->icon('x');
+        $dashboardIcon = $this->icon('dashboard');
+        $logoutIcon = $this->icon('logout');
         $nav = collect($entities)
-            ->map(fn (array $entity) => "<a href=\"{{ route('{$entity['route']}.index') }}\">{$entity['name']}</a>")
+            ->map(function (array $entity): ?string {
+                $route = $this->entityPrimaryRouteName($entity);
+                $icon = $this->icon('table');
+
+                return $route ? "<a @class(['nav-link', 'active' => request()->routeIs('{$entity['route']}.*')]) href=\"{{ route('{$route}') }}\">{$icon}<span>{$entity['name']}</span></a>" : null;
+            })
+            ->filter()
             ->implode("\n            ");
 
         return <<<BLADE
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{$appName}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ asset('logo.svg') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <style>
-        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b0f14; color: #f4f4f5; }
-        body { margin: 0; background: #0b0f14; min-height: 100vh; }
-        a { color: inherit; }
-        .shell { max-width: 1120px; margin: 0 auto; padding: 24px; }
-        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0 28px; }
-        .brand { font-weight: 800; font-size: 18px; }
-        .nav { display: flex; flex-wrap: wrap; gap: 8px; }
-        .nav a, .button { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 9px 13px; text-decoration: none; background: rgba(255,255,255,.05); color: #f4f4f5; font-weight: 700; font-size: 14px; cursor: pointer; }
-        .button.primary { background: #6ee7b7; color: #052e2b; border-color: #6ee7b7; }
-        .button.danger { background: rgba(248,113,113,.16); color: #fecaca; border-color: rgba(248,113,113,.35); }
-        .page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-        .eyebrow { margin: 0 0 6px; color: #a1a1aa; font-size: 12px; font-weight: 800; text-transform: uppercase; }
-        h1 { margin: 0; font-size: 32px; line-height: 1.1; }
-        h2 { margin-top: 0; }
-        .card { border: 1px solid rgba(255,255,255,.10); border-radius: 8px; background: rgba(255,255,255,.055); box-shadow: 0 24px 80px rgba(0,0,0,.25); }
-        .table-card { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
-        th { color: #a1a1aa; font-size: 12px; text-transform: uppercase; }
-        .actions, .actions-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .form-card { display: grid; gap: 16px; padding: 18px; max-width: 720px; }
-        label { display: grid; gap: 7px; color: #d4d4d8; font-weight: 700; }
-        input, textarea, select { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(0,0,0,.35); color: #f4f4f5; padding: 11px 12px; }
-        textarea { min-height: 120px; }
-        .error { color: #fca5a5; font-size: 13px; }
-        .detail-list { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 0; overflow: hidden; margin-bottom: 18px; }
-        .detail-list dt, .detail-list dd { margin: 0; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
-        .detail-list dt { color: #a1a1aa; font-weight: 800; }
-        .related-card { padding: 18px; margin-bottom: 18px; }
-        .pagination { margin-top: 16px; color: #d4d4d8; }
-        .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .muted { color: #a1a1aa; }
-        form.inline { margin: 0; }
-    </style>
 </head>
-<body>
-    <div class="shell">
-        <header class="topbar">
-            <a class="brand" href="{{ route('dashboard') }}">{$appName}</a>
-            <div class="top-actions">
-                @auth
-                    <nav class="nav">
-                    {$nav}
-                    </nav>
-                    <span class="muted">{{ auth()->user()->name }}</span>
-                    <form class="inline" method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <button class="button" type="submit">Log out</button>
-                    </form>
-                @else
-                    <a class="button" href="{{ route('login') }}">Log in</a>
-                    <a class="button primary" href="{{ route('register') }}">Register</a>
-                @endauth
-            </div>
-        </header>
+<body class="font-sans antialiased" x-data="{ sidebarOpen: false }">
+    <div class="app-shell">
+        <div class="mobile-topbar">
+            <a class="brand-link" href="{{ route('dashboard') }}">
+                <img class="brand-logo" src="{{ asset('logo.svg') }}" alt="{$appName}">
+                <span>{$appName}</span>
+            </a>
+            <button class="icon-button" type="button" aria-label="Open navigation" @click="sidebarOpen = true">
+                {$menuIcon}
+            </button>
+        </div>
 
-        @hasSection('content')
-            @yield('content')
-        @else
-            {{ \$slot ?? '' }}
-        @endif
+        <div class="sidebar-backdrop" x-show="sidebarOpen" x-cloak @click="sidebarOpen = false"></div>
+
+        <aside class="sidebar" :class="{ 'is-closed': ! sidebarOpen }" aria-label="Primary navigation">
+            <div class="sidebar-header">
+                <a class="brand-link" href="{{ route('dashboard') }}">
+                    <img class="brand-logo" src="{{ asset('logo.svg') }}" alt="{$appName}">
+                    <span>{$appName}</span>
+                </a>
+                <button class="icon-button lg:hidden" type="button" aria-label="Close navigation" @click="sidebarOpen = false">
+                    {$closeIcon}
+                </button>
+            </div>
+
+            @auth
+                <nav class="sidebar-nav">
+                    <a @class(['nav-link', 'active' => request()->routeIs('dashboard')]) href="{{ route('dashboard') }}">
+                        {$dashboardIcon}
+                        <span>Dashboard</span>
+                    </a>
+                    {$nav}
+                </nav>
+
+                <div class="sidebar-footer">
+                    <div class="user-chip">
+                        <span class="user-avatar">{{ strtoupper(substr(auth()->user()->name, 0, 1)) }}</span>
+                        <span class="min-w-0 flex-1 truncate">{{ auth()->user()->name }}</span>
+                    </div>
+                    <form class="mt-3" method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button class="button secondary w-full" type="submit">
+                            {$logoutIcon}
+                            <span>Log out</span>
+                        </button>
+                    </form>
+                </div>
+            @else
+                <div class="sidebar-nav">
+                    <a class="button secondary" href="{{ route('login') }}">Log in</a>
+                    <a class="button primary" href="{{ route('register') }}">Register</a>
+                </div>
+            @endauth
+        </aside>
+
+        <div class="content-shell">
+            <main class="page-main">
+                <div class="flash-region">
+                    @foreach(['success' => 'success', 'error' => 'danger', 'warning' => 'warning', 'status' => 'info'] as \$flashKey => \$flashVariant)
+                        @if(session(\$flashKey))
+                            <div class="status {{ \$flashVariant }} flash-alert" role="alert" x-data="{ visible: true }" x-show="visible">
+                                <span>{{ session(\$flashKey) }}</span>
+                                <button class="flash-dismiss" type="button" aria-label="Dismiss alert" @click="visible = false">{$closeIcon}</button>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+
+            @hasSection('content')
+                @yield('content')
+            @else
+                {{ \$slot ?? '' }}
+            @endif
+            </main>
+        </div>
     </div>
 </body>
 </html>
@@ -1419,34 +2964,22 @@ BLADE;
     private function authLayout(string $appName): string
     {
         return <<<BLADE
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{$appName}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ asset('logo.svg') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <style>
-        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b0f14; color: #f4f4f5; }
-        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0f14; padding: 24px; }
-        a { color: #6ee7b7; }
-        .auth-card { width: min(100%, 440px); border: 1px solid rgba(255,255,255,.10); border-radius: 8px; background: rgba(255,255,255,.055); padding: 28px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
-        .brand { display: inline-block; margin-bottom: 22px; color: #f4f4f5; font-weight: 800; text-decoration: none; }
-        h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.1; }
-        p { margin: 0 0 22px; color: #a1a1aa; }
-        form { display: grid; gap: 16px; }
-        label { display: grid; gap: 7px; color: #d4d4d8; font-weight: 700; }
-        input { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(0,0,0,.35); color: #f4f4f5; padding: 11px 12px; }
-        .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-        .button { border: 1px solid #6ee7b7; border-radius: 8px; padding: 10px 14px; background: #6ee7b7; color: #052e2b; font-weight: 800; cursor: pointer; }
-        .error { color: #fca5a5; font-size: 13px; }
-        .status { color: #86efac; font-size: 14px; }
-    </style>
 </head>
-<body>
+<body class="auth-body font-sans antialiased">
     <main class="auth-card">
-        <a class="brand" href="{{ url('/') }}">{$appName}</a>
+        <a class="brand-link auth-brand" href="{{ url('/') }}">
+            <img class="brand-logo" src="{{ asset('logo.svg') }}" alt="{$appName}">
+            <span>{$appName}</span>
+        </a>
         @yield('content')
     </main>
 </body>
@@ -1457,9 +2990,19 @@ BLADE;
 
     private function dashboardView(string $appName, array $entities): string
     {
-        $links = collect($entities)
-            ->map(fn (array $entity) => "        <a class=\"button primary\" href=\"{{ route('{$entity['route']}.index') }}\">Open {$entity['name']}</a>")
+        $resourceList = collect($entities)
+            ->map(fn (array $entity): string => "                <li>{$entity['name']}</li>")
             ->implode("\n");
+        $resourceList = $resourceList ?: '                <li>No resources enabled</li>';
+        $links = collect($entities)
+            ->map(function (array $entity): ?string {
+                $route = $this->entityPrimaryRouteName($entity);
+
+                return $route ? "                <a class=\"ui-link\" href=\"{{ route('{$route}') }}\">{$entity['name']}</a>" : null;
+            })
+            ->filter()
+            ->implode("\n");
+        $links = $links ?: '                <span class="muted">No generated screens are enabled yet.</span>';
 
         return <<<BLADE
 @extends('layouts.app')
@@ -1467,16 +3010,28 @@ BLADE;
 @section('content')
     <div class="page-header">
         <div>
-            <p class="eyebrow">Dashboard</p>
             <h1>{$appName}</h1>
+            <p class="muted">A generated Laravel admin application for managing your data.</p>
         </div>
     </div>
 
-    <section class="card related-card">
-        <h2>Generated CRUD</h2>
-        <p class="muted">Choose a resource to manage records.</p>
-        <div class="actions-row">
+    <section class="card summary-card">
+        <h2>What this app includes</h2>
+        <p class="muted">This generated application includes authentication, database migrations, Eloquent models, validation, Blade CRUD screens, relationship handling, flash messages, and empty states.</p>
+
+        <div class="summary-grid">
+            <div>
+                <h3>Resources</h3>
+                <ul>
+{$resourceList}
+                </ul>
+            </div>
+            <div>
+                <h3>Available screens</h3>
+                <div class="resource-links">
 {$links}
+                </div>
+            </div>
         </div>
     </section>
 @endsection
@@ -1806,49 +3361,129 @@ PHP;
         return now()->addSeconds($index)->format('Y_m_d_His').'_create_'.$relation['pivot_table'].'_table';
     }
 
+    private function foreignKeysMigrationFileName(int $index, array $entity): string
+    {
+        return now()->addSeconds($index)->format('Y_m_d_His').'_add_foreign_keys_to_'.$entity['table'].'_table';
+    }
+
     private function migrationColumn(array $field): string
     {
-        $column = match ($field['type']) {
-            'bigInteger' => "\$table->bigInteger('{$field['name']}')",
-            'boolean' => "\$table->boolean('{$field['name']}')",
-            'date' => "\$table->date('{$field['name']}')",
-            'datetime' => "\$table->dateTime('{$field['name']}')",
-            'decimal' => "\$table->decimal('{$field['name']}', 10, 2)",
-            'email', 'password', 'string' => "\$table->string('{$field['name']}')",
-            'integer' => "\$table->integer('{$field['name']}')",
-            'text' => "\$table->text('{$field['name']}')",
-            default => "\$table->string('{$field['name']}')",
+        $component = $this->fieldComponent($field);
+        $name = $field['name'];
+        $column = match ($component['migration']) {
+            'bigInteger' => "\$table->bigInteger('{$name}')",
+            'boolean' => "\$table->boolean('{$name}')",
+            'date' => "\$table->date('{$name}')",
+            'dateTime' => "\$table->dateTime('{$name}')",
+            'decimal' => "\$table->decimal('{$name}', 10, 2)",
+            'float' => "\$table->float('{$name}')",
+            'foreignId' => "\$table->foreignId('{$name}')",
+            'integer' => "\$table->integer('{$name}')",
+            'json' => "\$table->json('{$name}')",
+            'text' => "\$table->text('{$name}')",
+            'time' => "\$table->time('{$name}')",
+            'timestamp' => "\$table->timestamp('{$name}')",
+            default => "\$table->string('{$name}', ".$this->stringLength($field).')',
         };
 
         if (!$field['required']) {
             $column .= '->nullable()';
         }
 
-        if ($field['unique']) {
+        if ($this->isUniqueField($field)) {
             $column .= '->unique()';
         }
 
         return $column.';';
     }
 
-    private function relationMigrationColumn(array $relation): string
+    private function isUniqueField(array $field): bool
     {
-        return "\$table->foreignId('{$relation['foreign_key']}')->constrained('{$relation['target_table']}')->cascadeOnDelete();";
+        return (bool) ($field['unique'] ?? false)
+            && (bool) ($field['required'] ?? false)
+            && in_array($field['type'] ?? 'string', [
+                'bigInteger',
+                'date',
+                'datetime',
+                'decimal',
+                'email',
+                'enum',
+                'float',
+                'integer',
+                'phone',
+                'string',
+                'time',
+                'timestamp',
+                'url',
+            ], true);
     }
 
-    private function validationRule(string $type): string
+    private function relationColumn(array $relation): string
     {
-        return match ($type) {
-            'bigInteger', 'integer' => 'integer',
-            'boolean' => 'boolean',
-            'date' => 'date',
-            'datetime' => 'date',
-            'decimal' => 'numeric',
-            'email' => 'email',
-            'password' => 'string|min:8',
-            'text', 'string' => 'string',
-            default => 'string',
-        };
+        return "\$table->foreignId('{$relation['foreign_key']}')->nullable();";
+    }
+
+    private function relationForeignKey(array $relation): string
+    {
+        return "\$table->foreign('{$relation['foreign_key']}')->references('id')->on('{$relation['target_table']}')->cascadeOnDelete();";
+    }
+
+    private function validationRule(array $field): string
+    {
+        $rules = explode('|', $this->fieldComponent($field)['validation']);
+        $metadata = $field['metadata'] ?? [];
+
+        if (isset($metadata['min'])) {
+            $rules[] = 'min:'.$metadata['min'];
+        }
+
+        if (isset($metadata['max'])) {
+            $rules[] = 'max:'.$metadata['max'];
+        }
+
+        if (isset($metadata['minLength'])) {
+            $rules[] = 'min:'.$metadata['minLength'];
+        }
+
+        if (isset($metadata['maxLength'])) {
+            $rules[] = 'max:'.$metadata['maxLength'];
+        }
+
+        if (($field['type'] ?? null) === 'enum' && !empty($metadata['options'])) {
+            $rules[] = 'in:'.implode(',', $metadata['options']);
+        }
+
+        if (in_array($field['type'] ?? null, ['file', 'image'], true) && !empty($metadata['accept'])) {
+            $acceptedTypes = collect(explode(',', (string) $metadata['accept']))
+                ->map(fn (string $type): string => trim($type))
+                ->filter();
+            $extensions = $acceptedTypes
+                ->filter(fn (string $type): bool => str_starts_with($type, '.'))
+                ->map(fn (string $type): string => ltrim($type, '.'))
+                ->values()
+                ->all();
+            $mimeTypes = $acceptedTypes
+                ->filter(fn (string $type): bool => str_contains($type, '/') && !str_contains($type, '*'))
+                ->values()
+                ->all();
+
+            if ($extensions !== []) {
+                $rules[] = 'mimes:'.implode(',', $extensions);
+            }
+
+            if ($mimeTypes !== []) {
+                $rules[] = 'mimetypes:'.implode(',', $mimeTypes);
+            }
+        }
+
+        return implode('|', array_values(array_unique($rules)));
+    }
+
+    private function stringLength(array $field): int
+    {
+        $length = (int) ($field['metadata']['maxLength'] ?? 255);
+
+        return max(1, min(255, $length));
     }
 
     private function belongsToRelations(array $entity): array
