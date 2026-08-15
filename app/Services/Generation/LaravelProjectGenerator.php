@@ -2,6 +2,8 @@
 
 namespace App\Services\Generation;
 
+use Illuminate\Support\Str;
+
 class LaravelProjectGenerator
 {
     private const ROOT_FILES = [
@@ -63,6 +65,13 @@ class LaravelProjectGenerator
             $this->write(
                 $outputDir.'/database/migrations/'.$this->migrationFileName($index, $entity).'.php',
                 $this->migration($entity),
+            );
+        }
+
+        foreach ($this->belongsToManyPivotRelations($migrationEntities) as $index => $relation) {
+            $this->write(
+                $outputDir.'/database/migrations/'.$this->pivotMigrationFileName(count($migrationEntities) + $index, $relation).'.php',
+                $this->pivotMigration($relation),
             );
         }
     }
@@ -552,6 +561,12 @@ PHP;
         $fillable = collect($this->fillableAttributes($entity))
             ->map(fn (string $attribute) => "        '{$attribute}',")
             ->implode("\n");
+        $casts = collect($this->fieldCasts($entity))
+            ->map(fn (string $cast, string $attribute) => "        '{$attribute}' => '{$cast}',")
+            ->implode("\n");
+        $hidden = collect($this->hiddenAttributes($entity))
+            ->map(fn (string $attribute) => "        '{$attribute}',")
+            ->implode("\n");
 
         $relations = collect($entity['relations'] ?? [])
             ->map(fn (array $relation) => $this->modelRelationMethod($relation))
@@ -564,6 +579,8 @@ PHP;
             ? "\$this->{$displayField} ?: (string) \$this->id"
             : "(string) \$this->id";
 
+        $castsBlock = $casts ? "\n    protected \$casts = [\n{$casts}\n    ];\n" : '';
+        $hiddenBlock = $hidden ? "\n    protected \$hidden = [\n{$hidden}\n    ];\n" : '';
         $relationsBlock = $relations ? "\n{$relations}\n" : '';
 
         return <<<PHP
@@ -578,6 +595,7 @@ class {$entity['name']} extends Model
     protected \$fillable = [
 {$fillable}
     ];
+{$castsBlock}{$hiddenBlock}
 {$relationsBlock}
     public function displayName(): string
     {
@@ -598,6 +616,33 @@ PHP;
             collect($entity['fields'])->pluck('name')->all(),
             $foreignKeys,
         );
+    }
+
+    private function fieldCasts(array $entity): array
+    {
+        return collect($entity['fields'])
+            ->mapWithKeys(function (array $field): array {
+                $cast = match ($field['type']) {
+                    'bigInteger', 'integer' => 'integer',
+                    'boolean' => 'boolean',
+                    'date' => 'date',
+                    'datetime' => 'datetime',
+                    'decimal' => 'decimal:2',
+                    'password' => 'hashed',
+                    default => null,
+                };
+
+                return $cast ? [$field['name'] => $cast] : [];
+            })
+            ->all();
+    }
+
+    private function hiddenAttributes(array $entity): array
+    {
+        return collect($entity['fields'])
+            ->where('type', 'password')
+            ->pluck('name')
+            ->all();
     }
 
     private function modelRelationMethod(array $relation): string
@@ -625,32 +670,40 @@ PHP;
 PHP;
         }
 
+        if ($relation['type'] === 'hasOne') {
+            return <<<PHP
+
+    public function {$method}()
+    {
+        return \$this->hasOne({$target}::class);
+    }
+PHP;
+        }
+
+        if ($relation['type'] === 'belongsToMany') {
+            return <<<PHP
+
+    public function {$method}()
+    {
+        return \$this->belongsToMany({$target}::class)->withTimestamps();
+    }
+PHP;
+        }
+
         return '';
     }
 
     private function controller(array $entity): string
     {
-        $rules = collect($entity['fields'])
-            ->map(function (array $field) use ($entity) {
-                $rule = $field['required'] ? 'required' : 'nullable';
-                $rule .= '|'.$this->validationRule($field['type']);
-                if ($field['unique']) {
-                    $rule .= '|unique:'.$entity['table'].','.$field['name'];
-                }
-
-                return "            '{$field['name']}' => '{$rule}',";
-            })
-            ->merge(collect($this->belongsToRelations($entity))
-                ->map(fn (array $relation) => "            '{$relation['foreign_key']}' => 'required|exists:{$relation['target_table']},id',"))
-            ->implode("\n");
-
+        $rules = $this->controllerValidationRules($entity);
         $route = $entity['route'];
         $variable = $entity['variable'];
         $collection = $entity['collection'];
-        $with = $this->belongsToRelations($entity) === []
+        $withRelations = collect($this->eagerLoadRelations($entity))->pluck('method')->all();
+        $with = $withRelations === []
             ? ''
-            : "->with(['".collect($this->belongsToRelations($entity))->pluck('method')->implode("', '")."'])";
-        $relationImports = collect($this->belongsToRelations($entity))
+            : "->with(['".implode("', '", $withRelations)."'])";
+        $relationImports = collect($this->formRelations($entity))
             ->pluck('target')
             ->unique()
             ->reject(fn (string $target) => $target === $entity['name'])
@@ -660,6 +713,38 @@ PHP;
         $createRelationData = $this->controllerRelationData($entity);
         $createReturn = $this->controllerCreateReturn($entity);
         $editReturn = $this->controllerEditReturn($entity);
+        $relationKeys = collect($this->belongsToManyRelations($entity))
+            ->pluck('method')
+            ->map(fn (string $method) => "'{$method}'")
+            ->implode(', ');
+        $relationKeys = $relationKeys === '' ? '' : $relationKeys;
+        $showRelations = collect($this->showRelations($entity))->pluck('method')->all();
+        $showLoad = $showRelations === []
+            ? ''
+            : "        \${$variable}->loadMissing(['".implode("', '", $showRelations)."']);\n\n";
+        $syncRelationships = $this->syncRelationshipsMethod($entity);
+        $passwordFields = collect($entity['fields'])
+            ->where('type', 'password')
+            ->pluck('name')
+            ->map(fn (string $field) => "'{$field}'")
+            ->implode(', ');
+        $passwordFields = $passwordFields === '' ? '' : $passwordFields;
+        $passwordUpdateRules = collect($entity['fields'])
+            ->where('type', 'password')
+            ->pluck('name')
+            ->map(fn (string $field) => "                \$rules['{$field}'] = str_replace('required|', 'nullable|', \$rules['{$field}']);")
+            ->implode("\n");
+        $passwordUpdateRules = $passwordUpdateRules ? "\n{$passwordUpdateRules}" : '';
+        $passwordCleanup = $passwordFields === ''
+            ? ''
+            : <<<PHP
+
+        foreach ([{$passwordFields}] as \$passwordField) {
+            if ((\$attributes[\$passwordField] ?? null) === null || \$attributes[\$passwordField] === '') {
+                \$attributes->forget(\$passwordField);
+            }
+        }
+PHP;
 
         return <<<PHP
 <?php
@@ -688,13 +773,16 @@ class {$entity['name']}Controller extends Controller
 
     public function store(Request \$request): RedirectResponse
     {
-        \${$variable} = {$entity['name']}::query()->create(\$this->validatedData(\$request));
+        \$validated = \$this->validatedData(\$request);
+        \${$variable} = {$entity['name']}::query()->create(\$validated['attributes']);
+        \$this->syncRelationships(\${$variable}, \$validated['relations']);
 
         return redirect()->route('{$route}.show', \${$variable});
     }
 
     public function show({$entity['name']} \${$variable}): View
     {
+{$showLoad}
         return view('{$route}.show', compact('{$variable}'));
     }
 
@@ -706,7 +794,9 @@ class {$entity['name']}Controller extends Controller
 
     public function update(Request \$request, {$entity['name']} \${$variable}): RedirectResponse
     {
-        \${$variable}->update(\$this->validatedData(\$request, \${$variable}->id));
+        \$validated = \$this->validatedData(\$request, \${$variable}->id);
+        \${$variable}->update(\$validated['attributes']);
+        \$this->syncRelationships(\${$variable}, \$validated['relations']);
 
         return redirect()->route('{$route}.show', \${$variable});
     }
@@ -728,10 +818,19 @@ class {$entity['name']}Controller extends Controller
             foreach (\$rules as \$field => \$rule) {
                 \$rules[\$field] = str_replace(','.\$field, ','.\$field.','.\$ignoreId, \$rule);
             }
+{$passwordUpdateRules}
         }
 
-        return \$request->validate(\$rules);
+        \$validated = \$request->validate(\$rules);
+        \$attributes = collect(\$validated)->except([{$relationKeys}]);{$passwordCleanup}
+
+        return [
+            'attributes' => \$attributes->all(),
+            'relations' => collect(\$validated)->only([{$relationKeys}])->all(),
+        ];
     }
+
+{$syncRelationships}
 }
 
 PHP;
@@ -739,15 +838,16 @@ PHP;
 
     private function controllerRelationData(array $entity): string
     {
-        return collect($this->belongsToRelations($entity))
+        return collect($this->formRelations($entity))
             ->map(fn (array $relation) => "        \${$relation['target_collection']} = {$relation['target']}::query()->orderBy('id')->get();")
             ->implode("\n");
     }
 
     private function controllerCreateReturn(array $entity): string
     {
-        $collections = collect($this->belongsToRelations($entity))
+        $collections = collect($this->formRelations($entity))
             ->pluck('target_collection')
+            ->unique()
             ->map(fn (string $collection) => "'{$collection}'")
             ->implode(', ');
 
@@ -761,11 +861,77 @@ PHP;
     private function controllerEditReturn(array $entity): string
     {
         $compactItems = collect([$entity['variable']])
-            ->merge(collect($this->belongsToRelations($entity))->pluck('target_collection'))
+            ->merge(collect($this->formRelations($entity))->pluck('target_collection'))
+            ->unique()
             ->map(fn (string $item) => "'{$item}'")
             ->implode(', ');
 
         return "        return view('{$entity['route']}.edit', compact({$compactItems}));";
+    }
+
+    private function controllerValidationRules(array $entity): string
+    {
+        return collect($entity['fields'])
+            ->map(function (array $field) use ($entity) {
+                $rule = $field['required'] ? 'required' : 'nullable';
+                $rule .= '|'.$this->validationRule($field['type']);
+                if ($field['unique']) {
+                    $rule .= '|unique:'.$entity['table'].','.$field['name'];
+                }
+
+                return "            '{$field['name']}' => '{$rule}',";
+            })
+            ->merge(collect($this->belongsToRelations($entity))
+                ->map(fn (array $relation) => "            '{$relation['foreign_key']}' => 'required|integer|exists:{$relation['target_table']},id',"))
+            ->merge(collect($this->belongsToManyRelations($entity))
+                ->flatMap(fn (array $relation) => [
+                    "            '{$relation['method']}' => 'nullable|array',",
+                    "            '{$relation['method']}.*' => 'integer|exists:{$relation['target_table']},id',",
+                ]))
+            ->implode("\n");
+    }
+
+    private function syncRelationshipsMethod(array $entity): string
+    {
+        $syncLines = collect($this->belongsToManyRelations($entity))
+            ->map(fn (array $relation) => "        \${$entity['variable']}->{$relation['method']}()->sync(\$relations['{$relation['method']}'] ?? []);")
+            ->implode("\n");
+
+        if ($syncLines === '') {
+            $syncLines = '        // This model does not define many-to-many relationships.';
+        }
+
+        return <<<PHP
+    private function syncRelationships({$entity['name']} \${$entity['variable']}, array \$relations): void
+    {
+{$syncLines}
+    }
+
+PHP;
+    }
+
+    private function formRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->whereIn('type', ['belongsTo', 'belongsToMany'])
+            ->values()
+            ->all();
+    }
+
+    private function eagerLoadRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->whereIn('type', ['belongsTo', 'belongsToMany', 'hasOne'])
+            ->values()
+            ->all();
+    }
+
+    private function showRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->whereIn('type', ['belongsTo', 'belongsToMany', 'hasMany', 'hasOne'])
+            ->values()
+            ->all();
     }
 
     private function migration(array $entity): string
@@ -803,6 +969,45 @@ return new class extends Migration
 PHP;
     }
 
+    private function pivotMigration(array $relation): string
+    {
+        $models = $relation['pivot_models'];
+        $firstModel = $models[0];
+        $secondModel = $models[1];
+        $firstKey = Str::snake($firstModel).'_id';
+        $secondKey = Str::snake($secondModel).'_id';
+        $firstTable = Str::snake(Str::pluralStudly($firstModel));
+        $secondTable = Str::snake(Str::pluralStudly($secondModel));
+
+        return <<<PHP
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('{$relation['pivot_table']}', function (Blueprint \$table) {
+            \$table->id();
+            \$table->foreignId('{$firstKey}')->constrained('{$firstTable}')->cascadeOnDelete();
+            \$table->foreignId('{$secondKey}')->constrained('{$secondTable}')->cascadeOnDelete();
+            \$table->unique(['{$firstKey}', '{$secondKey}']);
+            \$table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('{$relation['pivot_table']}');
+    }
+};
+
+PHP;
+    }
+
     private function writeViews(string $outputDir, array $entity): void
     {
         $base = $outputDir.'/resources/views/'.$entity['route'];
@@ -816,13 +1021,13 @@ PHP;
     {
         $headers = collect($entity['fields'])
             ->map(fn (array $field) => '<th>'.$field['label'].'</th>')
-            ->merge(collect($this->belongsToRelations($entity))
+            ->merge(collect($this->indexRelations($entity))
                 ->map(fn (array $relation) => '<th>'.$relation['target'].'</th>'))
             ->implode("\n                ");
         $cells = collect($entity['fields'])
-            ->map(fn (array $field) => '<td>{{ $'.$entity['variable'].'->'.$field['name'].' }}</td>')
-            ->merge(collect($this->belongsToRelations($entity))
-                ->map(fn (array $relation) => '<td>{{ $'.$entity['variable'].'->'.$relation['method'].'?->displayName() ?? \'-\' }}</td>'))
+            ->map(fn (array $field) => $this->indexFieldCell($entity, $field))
+            ->merge(collect($this->indexRelations($entity))
+                ->map(fn (array $relation) => $this->indexRelationCell($entity, $relation)))
             ->implode("\n                ");
 
         return <<<BLADE
@@ -876,41 +1081,11 @@ BLADE;
         $method = $editing ? "\n        @method('PUT')" : '';
 
         $inputs = collect($entity['fields'])
-            ->map(function (array $field) use ($editing, $variable) {
-                $value = $editing
-                    ? "old('{$field['name']}', \${$variable}->{$field['name']})"
-                    : "old('{$field['name']}')";
-                $type = in_array($field['type'], ['integer', 'bigInteger', 'decimal'], true) ? 'number' : 'text';
-                if ($field['type'] === 'date') {
-                    $type = 'date';
-                } elseif ($field['type'] === 'datetime') {
-                    $type = 'datetime-local';
-                } elseif ($field['type'] === 'email') {
-                    $type = 'email';
-                } elseif ($field['type'] === 'password') {
-                    $type = 'password';
-                }
-
-                if ($field['type'] === 'text') {
-                    return <<<BLADE
-        <label>
-            <span>{$field['label']}</span>
-            <textarea name="{$field['name']}">{{ {$value} }}</textarea>
-        </label>
-        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
-BLADE;
-                }
-
-                return <<<BLADE
-        <label>
-            <span>{$field['label']}</span>
-            <input type="{$type}" name="{$field['name']}" value="{{ {$value} }}">
-        </label>
-        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
-BLADE;
-            })
+            ->map(fn (array $field) => $this->fieldInput($field, $editing, $variable))
             ->merge(collect($this->belongsToRelations($entity))
                 ->map(fn (array $relation) => $this->relationSelectInput($relation, $editing, $variable)))
+            ->merge(collect($this->belongsToManyRelations($entity))
+                ->map(fn (array $relation) => $this->manyRelationSelectInput($relation, $editing, $variable)))
             ->implode("\n\n");
 
         $title = $editing ? 'Edit '.$entity['name'] : 'Create '.$entity['name'];
@@ -942,9 +1117,13 @@ BLADE;
     private function showView(array $entity): string
     {
         $rows = collect($entity['fields'])
-            ->map(fn (array $field) => "<dt>{$field['label']}</dt>\n        <dd>{{ \${$entity['variable']}->{$field['name']} }}</dd>")
+            ->map(fn (array $field) => "<dt>{$field['label']}</dt>\n        <dd>".$this->fieldDisplayValue($entity, $field).'</dd>')
             ->merge(collect($this->belongsToRelations($entity))
                 ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}</dd>"))
+            ->merge(collect($this->hasOneRelations($entity))
+                ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}?->displayName() ?? '-' }}</dd>"))
+            ->merge(collect($this->belongsToManyRelations($entity))
+                ->map(fn (array $relation) => "<dt>{$relation['target']}</dt>\n        <dd>{{ \${$entity['variable']}->{$relation['method']}->map->displayName()->join(', ') ?: '-' }}</dd>"))
             ->implode("\n        ");
         $hasManySections = collect($this->hasManyRelations($entity))
             ->map(fn (array $relation) => $this->hasManyShowSection($entity, $relation))
@@ -981,6 +1160,94 @@ BLADE;
 BLADE;
     }
 
+    private function fieldInput(array $field, bool $editing, string $variable): string
+    {
+        $value = $this->fieldInputValue($field, $editing, $variable);
+
+        if ($field['type'] === 'boolean') {
+            return <<<BLADE
+        <label>
+            <span>{$field['label']}</span>
+            <select name="{$field['name']}">
+                <option value="">Choose {$field['label']}</option>
+                <option value="1" @selected((string) {$value} === '1')>Yes</option>
+                <option value="0" @selected((string) {$value} === '0')>No</option>
+            </select>
+        </label>
+        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+BLADE;
+        }
+
+        if ($field['type'] === 'text') {
+            return <<<BLADE
+        <label>
+            <span>{$field['label']}</span>
+            <textarea name="{$field['name']}">{{ {$value} }}</textarea>
+        </label>
+        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+BLADE;
+        }
+
+        $type = match ($field['type']) {
+            'bigInteger', 'decimal', 'integer' => 'number',
+            'date' => 'date',
+            'datetime' => 'datetime-local',
+            'email' => 'email',
+            'password' => 'password',
+            default => 'text',
+        };
+        $step = match ($field['type']) {
+            'bigInteger', 'integer' => ' step="1"',
+            'decimal' => ' step="0.01"',
+            default => '',
+        };
+        $autocomplete = $field['type'] === 'password' ? ' autocomplete="new-password"' : '';
+        $valueAttribute = $field['type'] === 'password' && $editing
+            ? ''
+            : ' value="{{ '.$value.' }}"';
+
+        return <<<BLADE
+        <label>
+            <span>{$field['label']}</span>
+            <input type="{$type}" name="{$field['name']}"{$step}{$autocomplete}{$valueAttribute}>
+        </label>
+        @error('{$field['name']}') <div class="error">{{ \$message }}</div> @enderror
+BLADE;
+    }
+
+    private function fieldInputValue(array $field, bool $editing, string $variable): string
+    {
+        if (!$editing || $field['type'] === 'password') {
+            return "old('{$field['name']}')";
+        }
+
+        return match ($field['type']) {
+            'boolean' => "old('{$field['name']}', \${$variable}->{$field['name']} === null ? '' : (string) (int) \${$variable}->{$field['name']})",
+            'date' => "old('{$field['name']}', optional(\${$variable}->{$field['name']})->format('Y-m-d'))",
+            'datetime' => "old('{$field['name']}', optional(\${$variable}->{$field['name']})->format('Y-m-d\\TH:i'))",
+            default => "old('{$field['name']}', \${$variable}->{$field['name']})",
+        };
+    }
+
+    private function indexFieldCell(array $entity, array $field): string
+    {
+        return '<td>'.$this->fieldDisplayValue($entity, $field).'</td>';
+    }
+
+    private function fieldDisplayValue(array $entity, array $field): string
+    {
+        $variable = $entity['variable'];
+        $name = $field['name'];
+
+        return match ($field['type']) {
+            'boolean' => "{{ \${$variable}->{$name} === null ? '-' : (\${$variable}->{$name} ? 'Yes' : 'No') }}",
+            'date' => "{{ optional(\${$variable}->{$name})->format('Y-m-d') ?? '-' }}",
+            'datetime' => "{{ optional(\${$variable}->{$name})->format('Y-m-d H:i') ?? '-' }}",
+            'password' => "{{ \${$variable}->{$name} ? 'Set' : '-' }}",
+            default => "{{ \${$variable}->{$name} }}",
+        };
+    }
+
     private function relationSelectInput(array $relation, bool $editing, string $variable): string
     {
         $value = $editing
@@ -1001,6 +1268,46 @@ BLADE;
         </label>
         @error('{$relation['foreign_key']}') <div class="error">{{ \$message }}</div> @enderror
 BLADE;
+    }
+
+    private function manyRelationSelectInput(array $relation, bool $editing, string $variable): string
+    {
+        $selectedExpression = $editing
+            ? "collect(old('{$relation['method']}', \${$variable}->{$relation['method']}->pluck('id')->all()))"
+            : "collect(old('{$relation['method']}', []))";
+
+        return <<<BLADE
+        @php(\$selected{$relation['target_collection']} = {$selectedExpression}->map(fn (\$id) => (string) \$id))
+        <label>
+            <span>{$relation['target']}</span>
+            <select name="{$relation['method']}[]" multiple>
+                @foreach(\${$relation['target_collection']} as \${$relation['target_variable']})
+                    <option value="{{ \${$relation['target_variable']}->id }}" @selected(\$selected{$relation['target_collection']}->contains((string) \${$relation['target_variable']}->id))>
+                        {{ \${$relation['target_variable']}->displayName() }}
+                    </option>
+                @endforeach
+            </select>
+        </label>
+        @error('{$relation['method']}') <div class="error">{{ \$message }}</div> @enderror
+        @error('{$relation['method']}.*') <div class="error">{{ \$message }}</div> @enderror
+BLADE;
+    }
+
+    private function indexRelationCell(array $entity, array $relation): string
+    {
+        if (in_array($relation['type'], ['belongsTo', 'hasOne'], true)) {
+            return '<td>{{ $'.$entity['variable'].'->'.$relation['method'].'?->displayName() ?? \'-\' }}</td>';
+        }
+
+        if ($relation['type'] === 'belongsToMany') {
+            return '<td>{{ $'.$entity['variable'].'->'.$relation['method'].'->map->displayName()->join(\', \') ?: \'-\' }}</td>';
+        }
+
+        if ($relation['type'] === 'hasMany') {
+            return '<td>{{ $'.$entity['variable'].'->'.$relation['method'].'->count() }}</td>';
+        }
+
+        return '<td>-</td>';
     }
 
     private function hasManyShowSection(array $entity, array $relation): string
@@ -1489,6 +1796,11 @@ PHP;
         return now()->addSeconds($index)->format('Y_m_d_His').'_create_'.$entity['table'].'_table';
     }
 
+    private function pivotMigrationFileName(int $index, array $relation): string
+    {
+        return now()->addSeconds($index)->format('Y_m_d_His').'_create_'.$relation['pivot_table'].'_table';
+    }
+
     private function migrationColumn(array $field): string
     {
         $column = match ($field['type']) {
@@ -1546,6 +1858,39 @@ PHP;
     {
         return collect($entity['relations'] ?? [])
             ->where('type', 'hasMany')
+            ->values()
+            ->all();
+    }
+
+    private function hasOneRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->where('type', 'hasOne')
+            ->values()
+            ->all();
+    }
+
+    private function belongsToManyRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->where('type', 'belongsToMany')
+            ->values()
+            ->all();
+    }
+
+    private function indexRelations(array $entity): array
+    {
+        return collect($entity['relations'] ?? [])
+            ->whereIn('type', ['belongsTo', 'belongsToMany', 'hasMany', 'hasOne'])
+            ->values()
+            ->all();
+    }
+
+    private function belongsToManyPivotRelations(array $entities): array
+    {
+        return collect($entities)
+            ->flatMap(fn (array $entity) => $this->belongsToManyRelations($entity))
+            ->unique('pivot_table')
             ->values()
             ->all();
     }

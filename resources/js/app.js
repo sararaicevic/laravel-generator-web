@@ -14,7 +14,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         selectedEntityIndex: Array.isArray(config.entities) && config.entities.length > 0 ? 0 : null,
         entities: Array.isArray(config.entities) ? normalizeEntities(config.entities) : [],
         fieldTypes: ['string', 'text', 'integer', 'bigInteger', 'decimal', 'boolean', 'date', 'datetime', 'email', 'password'],
-        relationTypes: ['belongsTo', 'hasMany'],
+        relationTypes: ['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'],
 
         get selectedEntity() {
             return this.entities[this.selectedEntityIndex] || null;
@@ -92,7 +92,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         },
 
         fieldLabel(field, index) {
-            return field.name.trim() || `Polje ${index + 1}`;
+            return field.name.trim() || `Field ${index + 1}`;
         },
 
         toPascalCase(value, fallback = 'GeneratedApp') {
@@ -155,7 +155,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             const entityName = this.toPascalCase(entity.name, `Model${index + 1}`);
             const fieldLines = entity.fields.length > 0
                 ? entity.fields.map((field, fieldIndex) => this.fieldLine(field, fieldIndex)).join('\n')
-                : '    # Dodaj polje';
+                : '    # Add field';
             const relationLines = entity.relations.length > 0
                 ? `\n${entity.relations.map((relation) => this.relationLine(relation)).join('\n')}`
                 : '';
@@ -164,10 +164,10 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         },
 
         get dslSource() {
-            const appName = this.toPascalCase(this.projectName, 'NazivAplikacije');
+            const appName = this.toPascalCase(this.projectName, 'GeneratedApplication');
             const entityBlocks = this.entities.length > 0
                 ? this.entities.map((entity, index) => this.entityBlock(entity, index)).join('\n\n')
-                : '  # Dodaj model';
+                : '  # Add model';
 
             return `app ${appName} {\n${entityBlocks}\n}`;
         },

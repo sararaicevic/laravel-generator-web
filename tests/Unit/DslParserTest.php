@@ -55,6 +55,100 @@ DSL);
         $this->assertSame('category_id', $product['relations'][0]['foreign_key']);
     }
 
+    public function test_it_adds_inverse_belongs_to_for_has_many_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app BlogPlatform {
+  entity User {
+    name: string required
+    hasMany Post
+  }
+
+  entity Post {
+    title: string required
+  }
+}
+DSL);
+
+        $post = collect($specification['entities'])->firstWhere('name', 'Post');
+
+        $this->assertSame('belongsTo', $post['relations'][0]['type']);
+        $this->assertSame('User', $post['relations'][0]['target']);
+        $this->assertSame('user_id', $post['relations'][0]['foreign_key']);
+        $this->assertTrue($post['relations'][0]['inferred']);
+    }
+
+    public function test_it_adds_inverse_has_many_for_belongs_to_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Category {
+    title: string required
+  }
+
+  entity Product {
+    name: string required
+    belongsTo Category
+  }
+}
+DSL);
+
+        $category = collect($specification['entities'])->firstWhere('name', 'Category');
+
+        $this->assertSame('hasMany', $category['relations'][0]['type']);
+        $this->assertSame('Product', $category['relations'][0]['target']);
+        $this->assertSame('products', $category['relations'][0]['method']);
+        $this->assertTrue($category['relations'][0]['inferred']);
+    }
+
+    public function test_it_adds_inverse_belongs_to_for_has_one_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app AccountSystem {
+  entity User {
+    name: string required
+    hasOne Profile
+  }
+
+  entity Profile {
+    bio: text nullable
+  }
+}
+DSL);
+
+        $profile = collect($specification['entities'])->firstWhere('name', 'Profile');
+
+        $this->assertSame('belongsTo', $profile['relations'][0]['type']);
+        $this->assertSame('User', $profile['relations'][0]['target']);
+        $this->assertSame('user_id', $profile['relations'][0]['foreign_key']);
+    }
+
+    public function test_it_adds_inverse_belongs_to_many_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app BlogPlatform {
+  entity Post {
+    title: string required
+    belongsToMany Tag
+  }
+
+  entity Tag {
+    name: string required
+  }
+}
+DSL);
+
+        $post = collect($specification['entities'])->firstWhere('name', 'Post');
+        $tag = collect($specification['entities'])->firstWhere('name', 'Tag');
+
+        $this->assertSame('belongsToMany', $post['relations'][0]['type']);
+        $this->assertSame('post_tag', $post['relations'][0]['pivot_table']);
+        $this->assertSame('belongsToMany', $tag['relations'][0]['type']);
+        $this->assertSame('Post', $tag['relations'][0]['target']);
+        $this->assertSame('post_tag', $tag['relations'][0]['pivot_table']);
+        $this->assertTrue($tag['relations'][0]['inferred']);
+    }
+
     public function test_it_rejects_relations_to_unknown_entities(): void
     {
         $this->expectException(DslParseException::class);
@@ -77,6 +171,19 @@ DSL);
 app InventorySystem {
   entity Product {
     name: json required
+  }
+}
+DSL);
+    }
+
+    public function test_it_rejects_conflicting_required_and_nullable_modifiers(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Product {
+    name: string required nullable
   }
 }
 DSL);

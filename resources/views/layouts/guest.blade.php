@@ -19,7 +19,7 @@
             <div class="grid w-full max-w-5xl gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
                 <div class="hidden lg:block">
                     <a href="/" class="inline-flex items-center gap-3 text-[#1E293B]">
-                        <x-application-logo class="h-12 w-12 text-[#6366F1]" />
+                        <x-application-logo class="h-12 w-12" />
                         <span class="text-lg font-semibold">Laravel DSL</span>
                     </a>
 
@@ -37,7 +37,7 @@
                 <div class="w-full">
                     <div class="mb-7 flex justify-center lg:hidden">
                         <a href="/" class="inline-flex items-center gap-3 text-[#1E293B]">
-                            <x-application-logo class="h-11 w-11 text-[#6366F1]" />
+                            <x-application-logo class="h-11 w-11" />
                             <span class="text-lg font-semibold">Laravel DSL</span>
                         </a>
                     </div>

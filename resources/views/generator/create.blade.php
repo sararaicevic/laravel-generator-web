@@ -209,7 +209,7 @@
                                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <h3 class="font-semibold text-[#1E293B]">Relationships</h3>
-                                            <p class="text-xs text-[#64748B]">Connect models with belongsTo and hasMany relations.</p>
+                                            <p class="text-xs text-[#64748B]">Connect models with belongsTo, hasOne, hasMany, and belongsToMany relations.</p>
                                         </div>
                                         <button
                                             type="button"

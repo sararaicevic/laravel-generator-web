@@ -3,7 +3,7 @@
         <div class="flex h-16 justify-between">
             <div class="flex items-center">
                 <a href="{{ route('dashboard') }}" class="flex items-center gap-3 text-[#1E293B]">
-                    <x-application-logo class="block h-10 w-10 text-[#6366F1]" />
+                    <x-application-logo class="block h-10 w-10" />
                     <span class="hidden text-sm font-bold sm:block">Laravel DSL</span>
                 </a>
 

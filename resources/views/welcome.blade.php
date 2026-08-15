@@ -13,7 +13,7 @@
             <div class="app-container flex min-h-screen flex-col">
                 <header class="flex items-center justify-between py-6">
                     <a href="/" class="flex items-center gap-3 text-[#1E293B]">
-                        <x-application-logo class="h-11 w-11 text-[#6366F1]" />
+                        <x-application-logo class="h-11 w-11" />
                         <span class="font-bold">Laravel DSL</span>
                     </a>
 
@@ -30,7 +30,10 @@
 
                 <section class="grid flex-1 gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
                     <div>
-                        <p class="ui-pill">Laravel application builder</p>
+                        <div class="flex items-center gap-4">
+                            <x-application-logo class="h-16 w-16 sm:h-20 sm:w-20" />
+                            <p class="ui-pill">Laravel application builder</p>
+                        </div>
                         <h1 class="mt-7 max-w-3xl text-5xl font-bold leading-tight text-[#1E293B] sm:text-6xl">
                             Generate a Laravel app from models and relationships.
                         </h1>

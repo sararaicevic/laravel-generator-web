@@ -6,6 +6,13 @@ use Illuminate\Support\Str;
 
 class DslParser
 {
+    private const RELATION_TYPES = [
+        'belongsTo',
+        'belongsToMany',
+        'hasMany',
+        'hasOne',
+    ];
+
     private const TYPES = [
         'bigInteger',
         'boolean',
@@ -91,7 +98,7 @@ class DslParser
                 continue;
             }
 
-            if (preg_match('/^(belongsTo|hasMany)\s+([A-Z][A-Za-z0-9_]*)$/', $line, $relationMatch)) {
+            if (preg_match('/^('.implode('|', self::RELATION_TYPES).')\s+([A-Z][A-Za-z0-9_]*)$/', $line, $relationMatch)) {
                 $type = $relationMatch[1];
                 $target = $relationMatch[2];
                 $key = $type.'_'.$target;
@@ -100,7 +107,7 @@ class DslParser
                     throw new DslParseException("Relacija {$entityName}.{$type} {$target} je definisana više puta.");
                 }
 
-                $relations[$key] = $this->relationSpec($type, $target);
+                $relations[$key] = $this->relationSpec($entityName, $type, $target);
                 continue;
             }
 
@@ -123,6 +130,13 @@ class DslParser
                 }
             }
 
+            $required = in_array('required', $modifiers, true);
+            $nullable = in_array('nullable', $modifiers, true);
+
+            if ($required && $nullable) {
+                throw new DslParseException("Polje {$entityName}.{$name} ne može biti i required i nullable.");
+            }
+
             if (isset($fields[$name])) {
                 throw new DslParseException("Polje {$entityName}.{$name} je definisano više puta.");
             }
@@ -131,7 +145,7 @@ class DslParser
                 'name' => $name,
                 'label' => Str::headline($name),
                 'type' => $type,
-                'required' => in_array('required', $modifiers, true),
+                'required' => $required,
                 'unique' => in_array('unique', $modifiers, true),
             ];
         }
@@ -139,19 +153,27 @@ class DslParser
         return [array_values($fields), array_values($relations)];
     }
 
-    private function relationSpec(string $type, string $target): array
+    private function relationSpec(string $source, string $type, string $target, bool $inferred = false): array
     {
         $targetVariable = Str::camel($target);
         $targetCollection = Str::camel(Str::pluralStudly($target));
+        $pivotModels = collect([$source, $target])
+            ->sort()
+            ->values()
+            ->all();
 
         return [
             'type' => $type,
+            'source' => $source,
             'target' => $target,
-            'method' => $type === 'belongsTo' ? $targetVariable : $targetCollection,
+            'method' => in_array($type, ['belongsTo', 'hasOne'], true) ? $targetVariable : $targetCollection,
             'foreign_key' => $type === 'belongsTo' ? Str::snake($target).'_id' : null,
             'target_table' => Str::snake(Str::pluralStudly($target)),
             'target_variable' => $targetVariable,
             'target_collection' => $targetCollection,
+            'pivot_table' => $type === 'belongsToMany' ? $this->pivotTable($source, $target) : null,
+            'pivot_models' => $type === 'belongsToMany' ? $pivotModels : [],
+            'inferred' => $inferred,
         ];
     }
 
@@ -171,7 +193,55 @@ class DslParser
             }
         }
 
+        return $this->addInverseRelations($entities);
+    }
+
+    private function addInverseRelations(array $entities): array
+    {
+        foreach ($entities as $entityName => $entity) {
+            foreach ($entity['relations'] as $relation) {
+                $target = $relation['target'];
+
+                if ($relation['type'] === 'hasMany' || $relation['type'] === 'hasOne') {
+                    $this->addRelationIfMissing($entities, $target, 'belongsTo', $entityName);
+                }
+
+                if ($relation['type'] === 'belongsTo') {
+                    $this->addRelationIfMissing($entities, $target, 'hasMany', $entityName, ['hasOne', 'hasMany']);
+                }
+
+                if ($relation['type'] === 'belongsToMany') {
+                    $this->addRelationIfMissing($entities, $target, 'belongsToMany', $entityName);
+                }
+            }
+        }
+
+        foreach ($entities as $entityName => $entity) {
+            $entities[$entityName]['relations'] = array_values($entity['relations']);
+        }
+
         return array_values($entities);
+    }
+
+    private function addRelationIfMissing(array &$entities, string $source, string $type, string $target, array $equivalentTypes = []): void
+    {
+        $equivalentTypes = $equivalentTypes === [] ? [$type] : $equivalentTypes;
+
+        foreach ($entities[$source]['relations'] as $relation) {
+            if ($relation['target'] === $target && in_array($relation['type'], $equivalentTypes, true)) {
+                return;
+            }
+        }
+
+        $entities[$source]['relations'][] = $this->relationSpec($source, $type, $target, true);
+    }
+
+    private function pivotTable(string $source, string $target): string
+    {
+        return collect([$source, $target])
+            ->map(fn (string $model) => Str::snake($model))
+            ->sort()
+            ->implode('_');
     }
 
     private function stripComments(string $source): string
