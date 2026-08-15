@@ -70,4 +70,10 @@ Generator se koristi na ruti:
 
 ## Napomena za testove
 
-`phpunit.xml` koristi SQLite in-memory bazu za test okruženje. Lokalni PHP mora imati instaliran `pdo_sqlite` driver.
+`phpunit.xml` koristi MySQL test bazu `laravel_generator_web_test` i Lerd podrazumijevane test kredencijale `root` / `lerd`. Napravi bazu prije pokretanja full test suite-a:
+
+```sql
+CREATE DATABASE laravel_generator_web_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Testovi ne treba da koriste razvojnu bazu jer `RefreshDatabase` pokrece migracije i moze brisati postojece testne tabele.
