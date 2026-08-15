@@ -22,6 +22,7 @@
                     </div>
 
                     @if($project->status === 'failed')
+                        <x-input-error class="mt-2" :messages="$errors->get('rerun')" />
                         <div class="rounded-md bg-red-50 p-4 text-sm text-red-800 whitespace-pre-wrap">{{ $project->error_message }}</div>
                     @endif
 
@@ -61,11 +62,20 @@
                             <a class="inline-flex items-center rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white" href="{{ route('generator.download', $project) }}">
                                 Preuzmi ZIP
                             </a>
+                        @elseif($project->status === 'failed')
+                            <form method="POST" action="{{ route('generator.rerun', $project) }}">
+                                @csrf
+                                <x-primary-button>Rerun</x-primary-button>
+                            </form>
+                            <a class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" href="{{ route('generator.edit', $project) }}">
+                                Edit
+                            </a>
                         @else
                             <form method="GET" action="{{ route('generator.show', $project) }}">
                                 <x-secondary-button>Osvježi</x-secondary-button>
                             </form>
                         @endif
+                        <a class="text-sm text-gray-600 underline" href="{{ route('generator.index') }}">Svi projekti</a>
                         <a class="text-sm text-gray-600 underline" href="{{ route('generator.create') }}">Nova specifikacija</a>
                     </div>
                 </div>

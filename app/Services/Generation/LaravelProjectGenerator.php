@@ -38,7 +38,9 @@ class LaravelProjectGenerator
             }
         }
 
-        mkdir($dir, 0775, true);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
     }
 
     private function write(string $path, string $content): void

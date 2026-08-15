@@ -25,6 +25,13 @@ Pravila imenovanja:
 - naziv polja pocinje malim slovom i koristi camelCase oblik
 - svako polje se pise u zasebnoj liniji
 
+Specifikacija moze nastati na dva nacina:
+
+- direktnim pisanjem DSL teksta
+- interaktivnim unosom kroz web interfejs, pri cemu aplikacija automatski formira DSL tekst ispod haube
+
+U prototipu je primarni tok interaktivni web interfejs, dok DSL preview sluzi da prikaze formalnu specifikaciju koja se salje parseru i generatoru.
+
 ## 3. Primjer specifikacije
 
 ```text

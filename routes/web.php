@@ -16,8 +16,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-    Route::get('/generator', [GeneratedProjectController::class, 'create'])->name('generator.create');
+    Route::get('/generator', [GeneratedProjectController::class, 'index'])->name('generator.index');
+    Route::get('/generator/create', [GeneratedProjectController::class, 'create'])->name('generator.create');
     Route::post('/generator', [GeneratedProjectController::class, 'store'])->name('generator.store');
+    Route::get('/generator/{project}/edit', [GeneratedProjectController::class, 'edit'])->name('generator.edit');
+    Route::put('/generator/{project}', [GeneratedProjectController::class, 'update'])->name('generator.update');
+    Route::post('/generator/{project}/rerun', [GeneratedProjectController::class, 'rerun'])->name('generator.rerun');
     Route::get('/generator/{project}', [GeneratedProjectController::class, 'show'])->name('generator.show');
     Route::get('/generator/{project}/download', [GeneratedProjectController::class, 'download'])->name('generator.download');
 });

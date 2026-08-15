@@ -48,7 +48,6 @@ class GenerateLaravelProject implements ShouldQueue
         $zipPath = $workDir.'/project.zip';
 
         @mkdir($workDir.'/input', 0775, true);
-        @mkdir($outDir, 0775, true);
 
         if (!is_file($inputPath)) {
             $project->forceFill([

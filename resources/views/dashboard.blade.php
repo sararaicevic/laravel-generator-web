@@ -11,8 +11,8 @@
                 <div class="p-6 text-gray-900 space-y-3">
                     <div>DSL generator za Laravel aplikacije.</div>
                     <div>
-                        <a class="underline text-sm text-gray-700 hover:text-gray-900" href="{{ route('generator.create') }}">
-                            Otvori generator
+                        <a class="underline text-sm text-gray-700 hover:text-gray-900" href="{{ route('generator.index') }}">
+                            Otvori generisane projekte
                         </a>
                     </div>
                 </div>
