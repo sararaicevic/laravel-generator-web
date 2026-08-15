@@ -21,33 +21,35 @@
             </div>
 
             <div class="hidden sm:flex sm:items-center">
-                <x-dropdown align="right" width="48">
-                    <x-slot name="trigger">
-                        <button class="inline-flex items-center gap-3 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-semibold text-[#1E293B] shadow-sm transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#6366F1]">
-                            <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[#E0E7FF] text-xs font-bold text-[#6366F1]">
-                                {{ Str::of(Auth::user()->name)->substr(0, 1)->upper() }}
-                            </span>
-                            <span>{{ Auth::user()->name }}</span>
-                            <svg class="h-4 w-4 text-[#64748B]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                        </button>
-                    </x-slot>
+                <details class="group relative">
+                    <summary class="inline-flex cursor-pointer list-none items-center gap-3 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-semibold text-[#1E293B] shadow-sm transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#6366F1] [&::-webkit-details-marker]:hidden">
+                        <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[#E0E7FF] text-xs font-bold text-[#6366F1]">
+                            {{ Str::of(Auth::user()->name)->substr(0, 1)->upper() }}
+                        </span>
+                        <span>{{ Auth::user()->name }}</span>
+                        <svg class="h-4 w-4 text-[#64748B] transition group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </summary>
 
-                    <x-slot name="content">
-                        <x-dropdown-link :href="route('profile.edit')">
+                    <div class="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-[#E2E8F0] bg-white py-1 shadow-xl shadow-slate-200/80">
+                        <div class="border-b border-[#E2E8F0] px-4 py-3">
+                            <div class="truncate text-sm font-semibold text-[#1E293B]">{{ Auth::user()->name }}</div>
+                            <div class="truncate text-xs text-[#64748B]">{{ Auth::user()->email }}</div>
+                        </div>
+
+                        <a href="{{ route('profile.edit') }}" class="block w-full px-4 py-2.5 text-start text-sm font-medium leading-5 text-[#64748B] transition duration-150 ease-in-out hover:bg-[#F8FAFC] hover:text-[#1E293B] focus:bg-[#F8FAFC] focus:outline-none">
                             {{ __('Profile') }}
-                        </x-dropdown-link>
+                        </a>
 
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-                            <x-dropdown-link :href="route('logout')"
-                                onclick="event.preventDefault(); this.closest('form').submit();">
+                            <button type="submit" class="block w-full px-4 py-2.5 text-start text-sm font-medium leading-5 text-red-600 transition duration-150 ease-in-out hover:bg-red-50 focus:bg-red-50 focus:outline-none">
                                 {{ __('Log Out') }}
-                            </x-dropdown-link>
+                            </button>
                         </form>
-                    </x-slot>
-                </x-dropdown>
+                    </div>
+                </details>
             </div>
 
             <div class="-me-2 flex items-center sm:hidden">

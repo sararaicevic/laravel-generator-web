@@ -6,7 +6,12 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
     const normalizeEntities = (entities) => entities.map((entity) => ({
         name: entity.name || '',
         fields: Array.isArray(entity.fields) ? entity.fields : [],
-        relations: Array.isArray(entity.relations) ? entity.relations : [],
+        relations: Array.isArray(entity.relations)
+            ? entity.relations.map((relation) => ({
+                type: relation.type || 'belongsTo',
+                target: relation.target || '',
+            }))
+            : [],
     }));
 
     return {
@@ -47,7 +52,10 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         },
 
         removeEntity(index) {
+            const entity = this.entities[index];
+            this.removeDirectRelationsForEntity(entity);
             this.entities.splice(index, 1);
+            this.syncAllRelationships();
 
             if (this.entities.length === 0) {
                 this.selectedEntityIndex = null;
@@ -77,14 +85,98 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
 
         addRelation(entity) {
             const target = this.availableRelationTargets[0]?.name || '';
-            entity.relations.push({
+            const relation = {
                 type: 'belongsTo',
                 target,
-            });
+            };
+
+            entity.relations.push(relation);
+            this.syncAllRelationships();
         },
 
         removeRelation(entity, index) {
+            if (entity.relations[index]?._managedInverse) {
+                return;
+            }
+
             entity.relations.splice(index, 1);
+            this.syncAllRelationships();
+        },
+
+        syncAllRelationships() {
+            this.entities.forEach((entity) => {
+                entity.relations = entity.relations.filter((relation) => !relation._managedInverse);
+            });
+
+            this.entities.forEach((entity, index) => {
+                entity.relations
+                    .filter((relation) => !relation._managedInverse)
+                    .forEach((relation) => this.addInverseRelationship(entity, index, relation));
+            });
+        },
+
+        addInverseRelationship(sourceEntity, sourceIndex, relation) {
+            const sourceName = this.entityModelName(sourceEntity, sourceIndex);
+            const targetIndex = this.entities.findIndex((entity, index) => (
+                index !== sourceIndex
+                && this.entityModelName(entity, index) === this.toPascalCase(relation.target, '')
+            ));
+
+            if (!sourceName || targetIndex === -1 || !relation.type) {
+                return;
+            }
+
+            const targetEntity = this.entities[targetIndex];
+            const inverseType = this.inverseRelationshipType(relation.type);
+
+            if (!inverseType || this.hasEquivalentRelationship(targetEntity, inverseType, sourceName)) {
+                return;
+            }
+
+            targetEntity.relations.push({
+                type: inverseType,
+                target: sourceName,
+                _managedInverse: true,
+            });
+        },
+
+        inverseRelationshipType(type) {
+            return {
+                belongsTo: 'hasMany',
+                hasOne: 'belongsTo',
+                hasMany: 'belongsTo',
+                belongsToMany: 'belongsToMany',
+            }[type] || null;
+        },
+
+        hasEquivalentRelationship(entity, type, target) {
+            const equivalentTypes = type === 'hasMany' ? ['hasOne', 'hasMany'] : [type];
+
+            return entity.relations.some((relation) => (
+                equivalentTypes.includes(relation.type)
+                && this.toPascalCase(relation.target, '') === target
+            ));
+        },
+
+        removeDirectRelationsForEntity(removedEntity) {
+            const removedName = this.toPascalCase(removedEntity?.name, '');
+            if (!removedName) {
+                return;
+            }
+
+            this.entities.forEach((entity) => {
+                entity.relations = entity.relations.filter((relation) => (
+                    relation._managedInverse || this.toPascalCase(relation.target, '') !== removedName
+                ));
+            });
+        },
+
+        entityModelName(entity, index) {
+            return this.toPascalCase(entity?.name, index === undefined ? '' : `Model${index + 1}`);
+        },
+
+        relationshipDescription(relation) {
+            return relation._managedInverse ? 'Auto-added inverse relationship' : 'Direct relationship';
         },
 
         entityLabel(entity, index) {
@@ -148,6 +240,10 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         },
 
         relationLine(relation) {
+            if (!relation.type || !relation.target) {
+                return null;
+            }
+
             return `    ${relation.type} ${this.toPascalCase(relation.target, 'TargetModel')}`;
         },
 
@@ -157,13 +253,14 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
                 ? entity.fields.map((field, fieldIndex) => this.fieldLine(field, fieldIndex)).join('\n')
                 : '    # Add field';
             const relationLines = entity.relations.length > 0
-                ? `\n${entity.relations.map((relation) => this.relationLine(relation)).join('\n')}`
+                ? `\n${entity.relations.map((relation) => this.relationLine(relation)).filter(Boolean).join('\n')}`
                 : '';
 
             return `  entity ${entityName} {\n${fieldLines}${relationLines}\n  }`;
         },
 
         get dslSource() {
+            this.syncAllRelationships();
             const appName = this.toPascalCase(this.projectName, 'GeneratedApplication');
             const entityBlocks = this.entities.length > 0
                 ? this.entities.map((entity, index) => this.entityBlock(entity, index)).join('\n\n')

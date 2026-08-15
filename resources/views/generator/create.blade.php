@@ -115,6 +115,7 @@
                                                 class="ui-input mt-2 block w-full text-base"
                                                 placeholder="e.g. Product"
                                                 x-model="selectedEntity.name"
+                                                @input="syncAllRelationships()"
                                                 required
                                             >
                                         </div>
@@ -209,7 +210,7 @@
                                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <h3 class="font-semibold text-[#1E293B]">Relationships</h3>
-                                            <p class="text-xs text-[#64748B]">Connect models with belongsTo, hasOne, hasMany, and belongsToMany relations.</p>
+                                            <p class="text-xs text-[#64748B]">Direct relations automatically add and remove their inverse relation on the related model.</p>
                                         </div>
                                         <button
                                             type="button"
@@ -231,8 +232,20 @@
                                         <template x-for="(relation, relationIndex) in selectedEntity.relations" :key="relationIndex">
                                             <div class="grid gap-3 rounded-md border border-[#E2E8F0] p-4 md:grid-cols-[180px_minmax(180px,1fr)_44px] md:items-center">
                                                 <div>
-                                                    <label class="mb-1 block text-xs font-medium text-[#64748B]">Relationship Type</label>
-                                                    <select class="ui-select block w-full text-sm" x-model="relation.type">
+                                                    <div class="mb-1 flex items-center justify-between gap-2">
+                                                        <label class="block text-xs font-medium text-[#64748B]">Relationship Type</label>
+                                                        <span
+                                                            class="rounded-full bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-semibold text-[#6366F1]"
+                                                            x-show="relation._managedInverse"
+                                                            x-text="'Auto'"
+                                                        ></span>
+                                                    </div>
+                                                    <select
+                                                        class="ui-select block w-full text-sm"
+                                                        x-model="relation.type"
+                                                        :disabled="relation._managedInverse"
+                                                        @change="syncAllRelationships()"
+                                                    >
                                                         <template x-for="type in relationTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
                                                         </template>
@@ -241,17 +254,25 @@
 
                                                 <div>
                                                     <label class="mb-1 block text-xs font-medium text-[#64748B]">Related Model</label>
-                                                    <select class="ui-select block w-full text-sm" x-model="relation.target">
+                                                    <select
+                                                        class="ui-select block w-full text-sm"
+                                                        x-model="relation.target"
+                                                        :disabled="relation._managedInverse"
+                                                        @change="syncAllRelationships()"
+                                                    >
                                                         <option value="">Choose model</option>
                                                         <template x-for="target in availableRelationTargets" :key="target.name">
                                                             <option :value="target.name" x-text="target.name"></option>
                                                         </template>
                                                     </select>
+                                                    <p class="mt-1 text-xs text-[#64748B]" x-text="relationshipDescription(relation)"></p>
                                                 </div>
 
                                                 <button
                                                     type="button"
                                                     class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50 md:mt-5"
+                                                    :class="relation._managedInverse ? 'cursor-not-allowed opacity-40' : ''"
+                                                    :disabled="relation._managedInverse"
                                                     title="Remove relationship"
                                                     @click="removeRelation(selectedEntity, relationIndex)"
                                                 >
