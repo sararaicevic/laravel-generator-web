@@ -3,18 +3,18 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{{ config('app.name', 'Laravel Generator') }}</title>
+        <title>{{ config('app.name', 'Laravel DSL') }}</title>
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=space-grotesk:400,500,600,700|inter:400,500,600,700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=plus-jakarta-sans:400,500,600,700&display=swap" rel="stylesheet" />
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body class="font-sans antialiased">
         <main class="app-shell min-h-screen">
             <div class="app-container flex min-h-screen flex-col">
                 <header class="flex items-center justify-between py-6">
-                    <a href="/" class="flex items-center gap-3 text-zinc-100">
-                        <x-application-logo class="h-11 w-11 text-emerald-300" />
-                        <span class="font-bold">Laravel Generator</span>
+                    <a href="/" class="flex items-center gap-3 text-[#1E293B]">
+                        <x-application-logo class="h-11 w-11 text-[#6366F1]" />
+                        <span class="font-bold">Laravel DSL</span>
                     </a>
 
                     @if (Route::has('login'))
@@ -28,38 +28,39 @@
                     @endif
                 </header>
 
-                <section class="grid flex-1 gap-10 py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+                <section class="grid flex-1 gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
                     <div>
-                        <p class="ui-pill">Laravel generator</p>
-                        <h1 class="mt-7 max-w-3xl text-5xl font-bold leading-tight text-zinc-50 sm:text-6xl">
-                            Brže od ideje do Laravel projekta.
+                        <p class="ui-pill">Laravel application builder</p>
+                        <h1 class="mt-7 max-w-3xl text-5xl font-bold leading-tight text-[#1E293B] sm:text-6xl">
+                            Generate a Laravel app from models and relationships.
                         </h1>
-                        <p class="mt-6 max-w-2xl text-lg leading-8 text-zinc-400">
-                            Unesi naziv aplikacije, dodaj modele i polja, a generator priprema strukturu projekta za preuzimanje.
+                        <p class="mt-6 max-w-2xl text-lg leading-8 text-[#64748B]">
+                            Define models, fields, validation rules, and relationships. Download a complete Laravel project with auth, migrations, controllers, routes, and Blade CRUD views.
                         </p>
 
                         <div class="mt-8 flex flex-wrap gap-3">
                             @auth
-                                <a href="{{ route('generator.index') }}" class="ui-button-primary">Otvori generator</a>
+                                <a href="{{ route('generator.create') }}" class="ui-button-primary">Create New Project</a>
+                                <a href="{{ route('generator.index') }}" class="ui-button-secondary">My Projects</a>
                             @else
-                                <a href="{{ route('login') }}" class="ui-button-primary">Počni rad</a>
+                                <a href="{{ route('login') }}" class="ui-button-primary">Start Building</a>
                             @endauth
                         </div>
                     </div>
 
                     <div class="ui-card p-5">
-                        <div class="space-y-3">
+                        <div class="grid gap-4">
                             <div class="ui-card-soft p-4">
-                                <div class="text-sm font-semibold text-zinc-50">1. Naziv aplikacije</div>
-                                <p class="mt-1 text-sm text-zinc-400">Postavi ime projekta koji želiš da generišeš.</p>
+                                <div class="text-sm font-semibold text-[#1E293B]">1. Application structure</div>
+                                <p class="mt-1 text-sm text-[#64748B]">Create the application name and add the core models.</p>
                             </div>
                             <div class="ui-card-soft p-4">
-                                <div class="text-sm font-semibold text-zinc-50">2. Modeli i polja</div>
-                                <p class="mt-1 text-sm text-zinc-400">Dodaj entitete, tipove podataka i osnovna pravila.</p>
+                                <div class="text-sm font-semibold text-[#1E293B]">2. Fields and relations</div>
+                                <p class="mt-1 text-sm text-[#64748B]">Choose data types, validation rules, and model relationships.</p>
                             </div>
                             <div class="ui-card-soft p-4">
-                                <div class="text-sm font-semibold text-zinc-50">3. Download projekta</div>
-                                <p class="mt-1 text-sm text-zinc-400">Preuzmi ZIP sa generisanim Laravel fajlovima.</p>
+                                <div class="text-sm font-semibold text-[#1E293B]">3. Downloadable Laravel project</div>
+                                <p class="mt-1 text-sm text-[#64748B]">Get a ZIP with setup instructions and a ready-to-run app skeleton.</p>
                             </div>
                         </div>
                     </div>

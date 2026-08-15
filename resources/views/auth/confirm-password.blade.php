@@ -1,10 +1,10 @@
 <x-guest-layout>
     <div class="mb-7">
         <p class="ui-pill">Secure area</p>
-        <h1 class="mt-4 text-3xl font-bold text-zinc-50">Potvrda lozinke</h1>
+        <h1 class="mt-4 text-3xl font-bold text-[#1E293B]">Confirm Password</h1>
     </div>
 
-    <div class="mb-4 text-sm leading-6 text-zinc-400">
+    <div class="mb-4 text-sm leading-6 text-[#64748B]">
         {{ __('This is a secure area of the application. Please confirm your password before continuing.') }}
     </div>
 

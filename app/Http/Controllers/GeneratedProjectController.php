@@ -129,7 +129,7 @@ class GeneratedProjectController extends Controller
 
         if (!$project->dsl_path || !is_file(storage_path('app/'.$project->dsl_path))) {
             return back()->withErrors([
-                'rerun' => 'Nije moguće ponovo pokrenuti generisanje jer DSL fajl nedostaje.',
+                'rerun' => 'Generation cannot be rerun because the DSL file is missing.',
             ]);
         }
 

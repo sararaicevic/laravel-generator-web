@@ -9,7 +9,7 @@
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=space-grotesk:400,500,600,700|inter:400,500,600,700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=plus-jakarta-sans:400,500,600,700&display=swap" rel="stylesheet" />
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -20,7 +20,7 @@
 
             <!-- Page Heading -->
             @isset($header)
-                <header class="border-b border-white/10 bg-black/15">
+                <header class="border-b border-[#E2E8F0] bg-white/75 backdrop-blur">
                     <div class="app-container py-7">
                         {{ $header }}
                     </div>

@@ -1,8 +1,8 @@
 <x-guest-layout>
     <div class="mb-7">
-        <p class="ui-pill">Pristup aplikaciji</p>
-        <h1 class="mt-4 text-3xl font-bold text-zinc-50">Prijava</h1>
-        <p class="mt-2 text-sm text-zinc-400">Unesi podatke za nalog i nastavi rad na projektima.</p>
+        <p class="ui-pill">Application Access</p>
+        <h1 class="mt-4 text-3xl font-bold text-[#1E293B]">Log in</h1>
+        <p class="mt-2 text-sm text-[#64748B]">Enter your account details and continue managing projects.</p>
     </div>
 
     <!-- Session Status -->
@@ -33,8 +33,8 @@
         <!-- Remember Me -->
         <div class="block mt-4">
             <label for="remember_me" class="inline-flex items-center">
-                <input id="remember_me" type="checkbox" class="rounded border-white/10 bg-zinc-950/70 text-emerald-300 shadow-sm focus:ring-emerald-300" name="remember">
-                <span class="ms-2 text-sm text-zinc-400">{{ __('Remember me') }}</span>
+                <input id="remember_me" type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" name="remember">
+                <span class="ms-2 text-sm text-[#64748B]">{{ __('Remember me') }}</span>
             </label>
         </div>
 

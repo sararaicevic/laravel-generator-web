@@ -4,11 +4,11 @@
 
 @layer base {
     html {
-        color-scheme: dark;
+        color-scheme: light;
     }
 
     body {
-        @apply bg-[#050607] text-zinc-100;
+        @apply bg-[#F8FAFC] text-[#1E293B];
         letter-spacing: 0;
     }
 
@@ -17,90 +17,87 @@
     }
 
     ::selection {
-        @apply bg-emerald-300 text-zinc-950;
+        @apply bg-[#E0E7FF] text-[#1E293B];
     }
 }
 
 @layer components {
     .app-shell {
-        @apply min-h-screen bg-[#050607] text-zinc-100;
+        @apply min-h-screen bg-[#F8FAFC] text-[#1E293B];
         background:
-            radial-gradient(circle at 18% 0%, rgba(16, 185, 129, 0.14), transparent 30rem),
-            radial-gradient(circle at 92% 18%, rgba(148, 163, 184, 0.10), transparent 26rem),
-            linear-gradient(135deg, #050607 0%, #0b0d10 48%, #101113 100%);
+            radial-gradient(circle at 12% 8%, rgba(99, 102, 241, 0.08), transparent 28rem),
+            radial-gradient(circle at 92% 20%, rgba(16, 185, 129, 0.07), transparent 24rem),
+            linear-gradient(135deg, #ffffff 0%, #f8fafc 45%, #f1f5f9 100%);
     }
 
     .app-container {
         @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
     }
 
-    .glass-panel {
-        @apply border border-white/10 bg-white/[0.055] shadow-2xl shadow-black/30 backdrop-blur-xl;
-    }
-
+    .glass-panel,
     .ui-card {
-        @apply rounded-lg border border-white/10 bg-zinc-950/55 shadow-xl shadow-black/25;
+        @apply rounded-lg border border-[#E2E8F0] bg-white shadow-[0_18px_60px_rgba(30,41,59,0.08)];
     }
 
     .ui-card-soft {
-        @apply rounded-lg border border-white/10 bg-white/[0.045] shadow-lg shadow-black/20;
+        @apply rounded-lg border border-[#E2E8F0] bg-white shadow-[0_10px_30px_rgba(30,41,59,0.05)];
     }
 
     .ui-muted {
-        @apply text-zinc-400;
+        @apply text-[#64748B];
     }
 
     .ui-heading {
-        @apply text-zinc-50;
+        @apply text-[#1E293B];
     }
 
     .ui-button-primary {
-        @apply inline-flex items-center justify-center rounded-md border border-emerald-300/70 bg-emerald-300 px-4 py-2 text-sm font-semibold text-zinc-950 shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-50;
+        @apply inline-flex items-center justify-center rounded-md border border-[#6366F1] bg-[#6366F1] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(99,102,241,0.22)] transition hover:bg-[#5558E8] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
     }
 
     .ui-button-secondary {
-        @apply inline-flex items-center justify-center rounded-md border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-white/25 hover:bg-white/[0.10] focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-50;
+        @apply inline-flex items-center justify-center rounded-md border border-[#CBD5E1] bg-white px-4 py-2 text-sm font-semibold text-[#1E293B] transition hover:border-[#A5B4FC] hover:bg-[#F8FAFC] hover:text-[#6366F1] focus:outline-none focus:ring-2 focus:ring-[#6366F1] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
     }
 
     .ui-button-danger {
-        @apply inline-flex items-center justify-center rounded-md border border-red-400/40 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/60 hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-zinc-950;
+        @apply inline-flex items-center justify-center rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-500 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-2;
     }
 
     .ui-input,
     .ui-select,
     .ui-textarea {
-        @apply rounded-md border-white/10 bg-zinc-950/70 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-emerald-300 focus:ring-emerald-300;
+        @apply rounded-md border-[#CBD5E1] bg-white text-[#1E293B] shadow-sm placeholder:text-[#94A3B8] focus:border-[#6366F1] focus:ring-[#6366F1];
     }
 
     .ui-label {
-        @apply block text-sm font-semibold text-zinc-300;
+        @apply block text-sm font-semibold text-[#1E293B];
     }
 
     .ui-link {
-        @apply text-sm font-semibold text-emerald-200 underline decoration-emerald-300/35 underline-offset-4 hover:text-emerald-100;
+        @apply text-sm font-semibold text-[#6366F1] underline decoration-[#C7D2FE] underline-offset-4 hover:text-[#4F46E5];
     }
 
     .ui-pill {
-        @apply inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-semibold text-zinc-300;
+        @apply inline-flex items-center rounded-full border border-[#E0E7FF] bg-[#EEF2FF] px-3 py-1 text-xs font-semibold text-[#6366F1];
     }
 
     .status-success {
-        @apply border-emerald-300/30 bg-emerald-300/10 text-emerald-200;
+        @apply border-[#BBF7D0] bg-[#DCFCE7] text-[#047857];
     }
 
     .status-danger {
-        @apply border-red-400/35 bg-red-500/10 text-red-200;
+        @apply border-red-200 bg-red-50 text-red-600;
     }
 
     .status-info {
-        @apply border-cyan-300/30 bg-cyan-300/10 text-cyan-100;
+        @apply border-[#C7D2FE] bg-[#EEF2FF] text-[#6366F1];
     }
 
     .status-muted {
-        @apply border-white/10 bg-white/[0.06] text-zinc-300;
+        @apply border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B];
     }
 
     .code-panel {
-        @apply max-h-[560px] overflow-auto rounded-md border border-white/10 bg-black/60 p-4 font-mono text-xs leading-5 text-emerald-100 shadow-inner shadow-black/40;
+        @apply max-h-[560px] overflow-auto rounded-md border border-[#CBD5E1] bg-[#0F172A] p-4 font-mono text-xs leading-5 text-[#E0E7FF] shadow-inner;
     }
 }

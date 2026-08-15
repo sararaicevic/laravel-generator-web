@@ -3,16 +3,16 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <p class="ui-pill">Projects</p>
-                <h2 class="mt-3 text-2xl font-bold leading-tight text-zinc-50">
-                    Generisani projekti
+                <h2 class="mt-3 text-2xl font-bold leading-tight text-[#1E293B]">
+                    My Projects
                 </h2>
-                <p class="mt-1 text-sm text-zinc-400">
-                    Pregled, izmjena i preuzimanje Laravel projekata nastalih iz DSL specifikacija.
+                <p class="mt-1 text-sm text-[#64748B]">
+                    View, edit, regenerate, and download Laravel applications created from DSL specifications.
                 </p>
             </div>
 
             <a href="{{ route('generator.create') }}" class="ui-button-primary">
-                Novi projekat
+                + New Project
             </a>
         </div>
     </x-slot>
@@ -21,34 +21,34 @@
         <div class="app-container">
             @if($projects->isEmpty())
                 <div class="ui-card p-10 text-center">
-                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-2xl font-bold text-emerald-200">
+                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-[#E0E7FF] bg-[#EEF2FF] text-2xl font-bold text-[#6366F1]">
                         +
                     </div>
-                    <h3 class="mt-5 text-xl font-bold text-zinc-50">Nema generisanih projekata</h3>
-                    <p class="mt-2 text-sm text-zinc-400">Kreiraj prvu DSL specifikaciju kroz vizuelni builder.</p>
+                    <h3 class="mt-5 text-xl font-bold text-[#1E293B]">No projects yet</h3>
+                    <p class="mt-2 text-sm text-[#64748B]">Create your first DSL specification with the visual builder.</p>
                     <a href="{{ route('generator.create') }}" class="mt-6 ui-button-primary">
-                        Kreiraj projekat
+                        Create Project
                     </a>
                 </div>
             @else
                 <div class="ui-card overflow-hidden">
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-white/10">
-                            <thead class="bg-white/[0.04]">
+                        <table class="min-w-full divide-y divide-[#E2E8F0]">
+                            <thead class="bg-[#F8FAFC]">
                                 <tr>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-zinc-500">Projekat</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-zinc-500">Status</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-zinc-500">Modeli</th>
-                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-zinc-500">Kreirano</th>
-                                    <th class="px-6 py-4 text-right text-xs font-semibold uppercase text-zinc-500">Akcije</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-[#64748B]">Project Name</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-[#64748B]">Status</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-[#64748B]">Models</th>
+                                    <th class="px-6 py-4 text-left text-xs font-semibold uppercase text-[#64748B]">Created</th>
+                                    <th class="px-6 py-4 text-right text-xs font-semibold uppercase text-[#64748B]">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-white/10">
+                            <tbody class="divide-y divide-[#E2E8F0] bg-white">
                                 @foreach($projects as $project)
-                                    <tr class="transition hover:bg-white/[0.035]">
+                                    <tr class="transition hover:bg-[#F8FAFC]">
                                         <td class="px-6 py-5">
-                                            <div class="font-semibold text-zinc-50">{{ $project->name }}</div>
-                                            <div class="mt-1 font-mono text-xs text-zinc-500">{{ $project->uuid }}</div>
+                                            <div class="font-semibold text-[#1E293B]">{{ $project->name }}</div>
+                                            <div class="mt-1 font-mono text-xs text-[#64748B]">{{ $project->uuid }}</div>
                                         </td>
                                         <td class="px-6 py-5">
                                             <span @class([
@@ -61,16 +61,16 @@
                                                 {{ strtoupper($project->status) }}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-5 text-sm text-zinc-300">
-                                            {{ $project->entities_count }}
+                                        <td class="px-6 py-5 text-sm text-[#1E293B]">
+                                            {{ $project->entities_count }} {{ Str::plural('model', $project->entities_count) }}
                                         </td>
-                                        <td class="px-6 py-5 text-sm text-zinc-500">
-                                            {{ $project->created_at?->format('d.m.Y H:i') }}
+                                        <td class="px-6 py-5 text-sm text-[#64748B]">
+                                            {{ $project->created_at?->format('M d, Y H:i') }}
                                         </td>
                                         <td class="px-6 py-5">
                                             <div class="flex flex-wrap justify-end gap-2">
                                                 <a class="ui-button-secondary px-3 py-2" href="{{ route('generator.show', $project) }}">
-                                                    Detalji
+                                                    Details
                                                 </a>
                                                 <a class="ui-button-secondary px-3 py-2" href="{{ route('generator.edit', $project) }}">
                                                     Edit
@@ -85,7 +85,7 @@
                                                 @endif
                                                 @if($project->status === 'succeeded')
                                                     <a class="ui-button-primary px-3 py-2" href="{{ route('generator.download', $project) }}">
-                                                        ZIP
+                                                        Download
                                                     </a>
                                                 @endif
                                             </div>
@@ -97,7 +97,7 @@
                     </div>
                 </div>
 
-                <div class="mt-5 text-zinc-300">
+                <div class="mt-5 text-[#64748B]">
                     {{ $projects->links() }}
                 </div>
             @endif

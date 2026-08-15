@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2">
             <p class="ui-pill">Builder</p>
-            <h2 class="text-2xl font-bold leading-tight text-zinc-50">
-                Laravel Generator
+            <h2 class="text-2xl font-bold leading-tight text-[#1E293B]">
+                {{ $project ? 'Edit Project' : 'Create New Application' }}
             </h2>
-            <p class="text-sm text-zinc-400">
-                {{ $project ? 'Izmijeni postojeću specifikaciju i ponovo generiši projekat.' : 'Vizuelno definiši aplikaciju kroz modele, polja i pravila.' }}
+            <p class="text-sm text-[#64748B]">
+                {{ $project ? 'Update your application models and regenerate the project.' : 'Build your Laravel application by defining models, fields, and relationships.' }}
             </p>
         </div>
     </x-slot>
@@ -23,13 +23,13 @@
                 <div class="ui-card p-5">
                     <div class="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-end">
                         <div>
-                            <label for="name" class="ui-label">Naziv aplikacije</label>
+                            <label for="name" class="ui-label">Application Name</label>
                             <input
                                 id="name"
                                 name="name"
                                 type="text"
                                 class="ui-input mt-2 block w-full text-base"
-                                placeholder="npr. Inventory System"
+                                placeholder="e.g. Inventory System"
                                 x-model="projectName"
                                 required
                             >
@@ -39,11 +39,11 @@
 
                         <div class="flex flex-wrap gap-3">
                             <button type="button" class="ui-button-secondary" @click="addEntity()">
-                                Dodaj model
+                                + Add Model
                             </button>
 
                             <button type="submit" class="ui-button-primary" :disabled="!canSubmit">
-                                {{ $project ? 'Sačuvaj i generiši' : 'Generiši projekat' }}
+                                {{ $project ? 'Save and Regenerate' : 'Generate' }}
                             </button>
                         </div>
                     </div>
@@ -51,14 +51,14 @@
 
                 <div class="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
                     <aside class="ui-card overflow-hidden">
-                        <div class="border-b border-white/10 p-4">
+                        <div class="border-b border-[#E2E8F0] p-4">
                             <div class="flex items-center justify-between gap-3">
                                 <div>
-                                    <h3 class="font-semibold text-zinc-50">Modeli</h3>
-                                    <p class="text-xs text-zinc-500">Entiteti aplikacije</p>
+                                    <h3 class="font-semibold text-[#1E293B]">Models</h3>
+                                    <p class="text-xs text-[#64748B]">Application entities</p>
                                 </div>
                                 <button type="button" class="ui-button-primary px-3 py-2" @click="addEntity()">
-                                    Novi
+                                    New
                                 </button>
                             </div>
                         </div>
@@ -67,11 +67,11 @@
                             <template x-if="entities.length === 0">
                                 <button
                                     type="button"
-                                    class="flex min-h-44 w-full flex-col items-center justify-center rounded-md border border-dashed border-white/15 px-4 py-8 text-center transition hover:border-emerald-300/40 hover:bg-emerald-300/5"
+                                    class="flex min-h-44 w-full flex-col items-center justify-center rounded-md border border-dashed border-[#CBD5E1] px-4 py-8 text-center transition hover:border-[#A5B4FC] hover:bg-[#EEF2FF]"
                                     @click="addEntity()"
                                 >
-                                    <span class="text-sm font-semibold text-zinc-50">Dodaj prvi model</span>
-                                    <span class="mt-1 text-sm text-zinc-500">Npr. Product, Category, Order</span>
+                                    <span class="text-sm font-semibold text-[#1E293B]">Add the first model</span>
+                                    <span class="mt-1 text-sm text-[#64748B]">For example: Product, Category, Order</span>
                                 </button>
                             </template>
 
@@ -80,11 +80,11 @@
                                     <button
                                         type="button"
                                         class="flex w-full items-center justify-between gap-3 rounded-md border px-3 py-3 text-left text-sm transition"
-                                        :class="selectedEntityIndex === index ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-100' : 'border-transparent text-zinc-400 hover:border-white/10 hover:bg-white/[0.05] hover:text-zinc-100'"
+                                        :class="selectedEntityIndex === index ? 'border-[#E0E7FF] bg-[#EEF2FF] text-[#6366F1]' : 'border-transparent text-[#64748B] hover:border-[#E2E8F0] hover:bg-[#F8FAFC] hover:text-[#1E293B]'"
                                         @click="selectEntity(index)"
                                     >
                                         <span class="truncate font-semibold" x-text="entityLabel(entity, index)"></span>
-                                        <span class="shrink-0 rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-xs text-zinc-400" x-text="entity.fields.length"></span>
+                                        <span class="shrink-0 rounded-full border border-[#E2E8F0] bg-white px-2 py-0.5 text-xs text-[#64748B]" x-text="entity.fields.length"></span>
                                     </button>
                                 </template>
                             </div>
@@ -95,32 +95,32 @@
                         <template x-if="!selectedEntity">
                             <div class="flex min-h-[520px] flex-col items-center justify-center p-8 text-center">
                                 <div class="max-w-sm">
-                                    <h3 class="text-xl font-bold text-zinc-50">Nema izabranog modela</h3>
-                                    <p class="mt-2 text-sm text-zinc-400">Dodaj model da bi definisala njegova polja i pravila.</p>
+                                    <h3 class="text-xl font-bold text-[#1E293B]">No model selected</h3>
+                                    <p class="mt-2 text-sm text-[#64748B]">Add a model to define its fields and rules.</p>
                                     <button type="button" class="mt-5 ui-button-primary" @click="addEntity()">
-                                        Dodaj model
+                                        Add Model
                                     </button>
                                 </div>
                             </div>
                         </template>
 
                         <template x-if="selectedEntity">
-                            <div class="divide-y divide-white/10">
+                            <div class="divide-y divide-[#E2E8F0]">
                                 <div class="p-5">
                                     <div class="flex flex-wrap items-start justify-between gap-4">
                                         <div class="min-w-0 flex-1">
-                                            <label class="ui-label">Naziv modela</label>
+                                            <label class="ui-label">Model Name</label>
                                             <input
                                                 type="text"
                                                 class="ui-input mt-2 block w-full text-base"
-                                                placeholder="npr. Product"
+                                                placeholder="e.g. Product"
                                                 x-model="selectedEntity.name"
                                                 required
                                             >
                                         </div>
 
                                         <button type="button" class="ui-button-danger" @click="removeEntity(selectedEntityIndex)">
-                                            Ukloni model
+                                            Remove Model
                                         </button>
                                     </div>
                                 </div>
@@ -128,37 +128,37 @@
                                 <div class="p-5">
                                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <h3 class="font-semibold text-zinc-50">Polja modela</h3>
-                                            <p class="text-xs text-zinc-500">Naziv, tip i validaciona pravila</p>
+                                            <h3 class="font-semibold text-[#1E293B]">Fields</h3>
+                                            <p class="text-xs text-[#64748B]">Field name, type, and validation rules</p>
                                         </div>
                                         <button type="button" class="ui-button-secondary px-3 py-2" @click="addField(selectedEntity)">
-                                            Dodaj polje
+                                            + Add Field
                                         </button>
                                     </div>
 
                                     <template x-if="selectedEntity.fields.length === 0">
                                         <button
                                             type="button"
-                                            class="flex min-h-36 w-full flex-col items-center justify-center rounded-md border border-dashed border-white/15 px-4 py-8 text-center transition hover:border-emerald-300/40 hover:bg-emerald-300/5"
+                                            class="flex min-h-36 w-full flex-col items-center justify-center rounded-md border border-dashed border-[#CBD5E1] px-4 py-8 text-center transition hover:border-[#A5B4FC] hover:bg-[#EEF2FF]"
                                             @click="addField(selectedEntity)"
                                         >
-                                            <span class="text-sm font-semibold text-zinc-50">Dodaj prvo polje</span>
-                                            <span class="mt-1 text-sm text-zinc-500">Npr. name, title, price, email</span>
+                                            <span class="text-sm font-semibold text-[#1E293B]">Add the first field</span>
+                                            <span class="mt-1 text-sm text-[#64748B]">For example: name, title, price, email</span>
                                         </button>
                                     </template>
 
-                                    <div class="overflow-hidden rounded-md border border-white/10" x-show="selectedEntity.fields.length > 0">
-                                        <div class="hidden grid-cols-[minmax(160px,1fr)_150px_220px_44px] gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-semibold uppercase text-zinc-500 md:grid">
-                                            <div>Naziv</div>
-                                            <div>Tip</div>
-                                            <div>Pravila</div>
+                                    <div class="overflow-hidden rounded-md border border-[#E2E8F0]" x-show="selectedEntity.fields.length > 0">
+                                        <div class="hidden grid-cols-[minmax(160px,1fr)_150px_220px_44px] gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-xs font-semibold uppercase text-[#64748B] md:grid">
+                                            <div>Field Name</div>
+                                            <div>Type</div>
+                                            <div>Rules</div>
                                             <div></div>
                                         </div>
 
                                         <template x-for="(field, fieldIndex) in selectedEntity.fields" :key="fieldIndex">
-                                            <div class="grid gap-3 border-b border-white/10 p-4 last:border-b-0 md:grid-cols-[minmax(160px,1fr)_150px_220px_44px] md:items-center">
+                                            <div class="grid gap-3 border-b border-[#E2E8F0] p-4 last:border-b-0 md:grid-cols-[minmax(160px,1fr)_150px_220px_44px] md:items-center">
                                                 <div>
-                                                    <label class="mb-1 block text-xs font-medium text-zinc-500 md:hidden">Naziv</label>
+                                                    <label class="mb-1 block text-xs font-medium text-[#64748B] md:hidden">Field Name</label>
                                                     <input
                                                         type="text"
                                                         class="ui-input block w-full text-sm"
@@ -169,7 +169,7 @@
                                                 </div>
 
                                                 <div>
-                                                    <label class="mb-1 block text-xs font-medium text-zinc-500 md:hidden">Tip</label>
+                                                    <label class="mb-1 block text-xs font-medium text-[#64748B] md:hidden">Type</label>
                                                     <select class="ui-select block w-full text-sm" x-model="field.type">
                                                         <template x-for="type in fieldTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
@@ -178,24 +178,24 @@
                                                 </div>
 
                                                 <div class="flex flex-wrap gap-3">
-                                                    <label class="inline-flex items-center gap-2 text-sm text-zinc-300">
-                                                        <input type="checkbox" class="rounded border-white/10 bg-zinc-950/70 text-emerald-300 shadow-sm focus:ring-emerald-300" x-model="field.required" @change="if (field.required) field.nullable = false">
+                                                    <label class="inline-flex items-center gap-2 text-sm text-[#1E293B]">
+                                                        <input type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" x-model="field.required" @change="if (field.required) field.nullable = false">
                                                         Required
                                                     </label>
-                                                    <label class="inline-flex items-center gap-2 text-sm text-zinc-300">
-                                                        <input type="checkbox" class="rounded border-white/10 bg-zinc-950/70 text-emerald-300 shadow-sm focus:ring-emerald-300" x-model="field.nullable" @change="if (field.nullable) field.required = false">
+                                                    <label class="inline-flex items-center gap-2 text-sm text-[#1E293B]">
+                                                        <input type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" x-model="field.nullable" @change="if (field.nullable) field.required = false">
                                                         Nullable
                                                     </label>
-                                                    <label class="inline-flex items-center gap-2 text-sm text-zinc-300">
-                                                        <input type="checkbox" class="rounded border-white/10 bg-zinc-950/70 text-emerald-300 shadow-sm focus:ring-emerald-300" x-model="field.unique">
+                                                    <label class="inline-flex items-center gap-2 text-sm text-[#1E293B]">
+                                                        <input type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" x-model="field.unique">
                                                         Unique
                                                     </label>
                                                 </div>
 
                                                 <button
                                                     type="button"
-                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-400/30 bg-red-500/10 text-sm font-semibold text-red-200 transition hover:bg-red-500/20"
-                                                    title="Ukloni polje"
+                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50"
+                                                    title="Remove field"
                                                     @click="removeField(selectedEntity, fieldIndex)"
                                                 >
                                                     X
@@ -208,8 +208,8 @@
                                 <div class="p-5">
                                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <h3 class="font-semibold text-zinc-50">Relacije</h3>
-                                            <p class="text-xs text-zinc-500">Poveži modele kroz belongsTo i hasMany odnose.</p>
+                                            <h3 class="font-semibold text-[#1E293B]">Relationships</h3>
+                                            <p class="text-xs text-[#64748B]">Connect models with belongsTo and hasMany relations.</p>
                                         </div>
                                         <button
                                             type="button"
@@ -217,21 +217,21 @@
                                             :disabled="availableRelationTargets.length === 0"
                                             @click="addRelation(selectedEntity)"
                                         >
-                                            Dodaj relaciju
+                                            + Add Relationship
                                         </button>
                                     </div>
 
                                     <template x-if="availableRelationTargets.length === 0">
-                                        <div class="rounded-md border border-dashed border-white/15 px-4 py-5 text-sm text-zinc-500">
-                                            Za relaciju su potrebna najmanje dva imenovana modela.
+                                        <div class="rounded-md border border-dashed border-[#CBD5E1] px-4 py-5 text-sm text-[#64748B]">
+                                            Relationships require at least two named models.
                                         </div>
                                     </template>
 
                                     <div class="space-y-3" x-show="selectedEntity.relations.length > 0">
                                         <template x-for="(relation, relationIndex) in selectedEntity.relations" :key="relationIndex">
-                                            <div class="grid gap-3 rounded-md border border-white/10 p-4 md:grid-cols-[180px_minmax(180px,1fr)_44px] md:items-center">
+                                            <div class="grid gap-3 rounded-md border border-[#E2E8F0] p-4 md:grid-cols-[180px_minmax(180px,1fr)_44px] md:items-center">
                                                 <div>
-                                                    <label class="mb-1 block text-xs font-medium text-zinc-500">Tip relacije</label>
+                                                    <label class="mb-1 block text-xs font-medium text-[#64748B]">Relationship Type</label>
                                                     <select class="ui-select block w-full text-sm" x-model="relation.type">
                                                         <template x-for="type in relationTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
@@ -240,9 +240,9 @@
                                                 </div>
 
                                                 <div>
-                                                    <label class="mb-1 block text-xs font-medium text-zinc-500">Ciljni model</label>
+                                                    <label class="mb-1 block text-xs font-medium text-[#64748B]">Related Model</label>
                                                     <select class="ui-select block w-full text-sm" x-model="relation.target">
-                                                        <option value="">Izaberi model</option>
+                                                        <option value="">Choose model</option>
                                                         <template x-for="target in availableRelationTargets" :key="target.name">
                                                             <option :value="target.name" x-text="target.name"></option>
                                                         </template>
@@ -251,8 +251,8 @@
 
                                                 <button
                                                     type="button"
-                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-400/30 bg-red-500/10 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 md:mt-5"
-                                                    title="Ukloni relaciju"
+                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50 md:mt-5"
+                                                    title="Remove relationship"
                                                     @click="removeRelation(selectedEntity, relationIndex)"
                                                 >
                                                     X
@@ -268,13 +268,13 @@
                     <div class="ui-card p-4 text-sm xl:col-span-2">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                                <span class="font-semibold text-zinc-50">Status specifikacije</span>
-                                <p class="mt-1 text-zinc-400">Kada su naziv aplikacije, model i polja popunjeni, projekat je spreman za generisanje.</p>
+                                <span class="font-semibold text-[#1E293B]">Specification Status</span>
+                                <p class="mt-1 text-[#64748B]">When the application name, model, and fields are complete, the project is ready to generate.</p>
                             </div>
                             <span
                                 class="ui-pill"
-                                :class="canSubmit ? 'status-success' : 'border-amber-300/30 bg-amber-300/10 text-amber-100'"
-                                x-text="canSubmit ? 'Spremno' : 'Nedovršeno'"
+                                :class="canSubmit ? 'status-success' : 'border-amber-200 bg-amber-50 text-amber-700'"
+                                x-text="canSubmit ? 'Ready' : 'Incomplete'"
                             ></span>
                         </div>
                     </div>

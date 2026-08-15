@@ -9,7 +9,7 @@
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=space-grotesk:400,500,600,700|inter:400,500,600,700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=plus-jakarta-sans:400,500,600,700&display=swap" rel="stylesheet" />
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -18,27 +18,27 @@
         <div class="app-shell flex min-h-screen items-center justify-center px-4 py-10">
             <div class="grid w-full max-w-5xl gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
                 <div class="hidden lg:block">
-                    <a href="/" class="inline-flex items-center gap-3 text-zinc-100">
-                        <x-application-logo class="h-12 w-12 text-emerald-300" />
-                        <span class="text-lg font-semibold">Laravel Generator</span>
+                    <a href="/" class="inline-flex items-center gap-3 text-[#1E293B]">
+                        <x-application-logo class="h-12 w-12 text-[#6366F1]" />
+                        <span class="text-lg font-semibold">Laravel DSL</span>
                     </a>
 
                     <div class="mt-14 max-w-xl">
-                        <p class="ui-pill">Laravel generator</p>
-                        <h1 class="mt-6 text-5xl font-bold leading-tight text-zinc-50">
-                            Prijavi se i nastavi rad na aplikacijama.
+                        <p class="ui-pill">Laravel DSL</p>
+                        <h1 class="mt-6 text-5xl font-bold leading-tight text-[#1E293B]">
+                            Sign in and continue building applications.
                         </h1>
-                        <p class="mt-5 max-w-lg text-base leading-7 text-zinc-400">
-                            Upravljaj projektima, definiši modele i preuzmi generisani Laravel kod iz jednog preglednog workspace-a.
+                        <p class="mt-5 max-w-lg text-base leading-7 text-[#64748B]">
+                            Manage projects, define models, and download generated Laravel code from one clean workspace.
                         </p>
                     </div>
                 </div>
 
                 <div class="w-full">
                     <div class="mb-7 flex justify-center lg:hidden">
-                        <a href="/" class="inline-flex items-center gap-3 text-zinc-100">
-                            <x-application-logo class="h-11 w-11 text-emerald-300" />
-                            <span class="text-lg font-semibold">Laravel Generator</span>
+                        <a href="/" class="inline-flex items-center gap-3 text-[#1E293B]">
+                            <x-application-logo class="h-11 w-11 text-[#6366F1]" />
+                            <span class="text-lg font-semibold">Laravel DSL</span>
                         </a>
                     </div>
 
