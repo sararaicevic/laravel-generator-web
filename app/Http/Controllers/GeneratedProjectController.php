@@ -190,6 +190,8 @@ class GeneratedProjectController extends Controller
             'dsl_path' => $this->toStorageRelative($dslPath),
         ])->save();
 
+        $this->writeProjectLog($project, $dsl, $specification);
+
         foreach ($specification['entities'] as $entitySpec) {
             /** @var GeneratedEntity $entity */
             $entity = $project->entities()->create([
@@ -205,6 +207,36 @@ class GeneratedProjectController extends Controller
                 ]);
             }
         }
+    }
+
+    private function writeProjectLog(GeneratedProject $project, string $dsl, array $specification): void
+    {
+        $appDirectory = Str::slug($project->name) ?: 'unnamed-app';
+        $logDir = storage_path('app/projectLogs/'.$appDirectory);
+        @mkdir($logDir, 0775, true);
+
+        $timestamp = now()->format('Y-m-d_H-i-s_u');
+        $logPath = $logDir.'/'.$timestamp.'_'.$project->uuid.'.log';
+
+        $payload = [
+            'logged_at' => now()->toIso8601String(),
+            'project' => [
+                'id' => $project->id,
+                'uuid' => $project->uuid,
+                'name' => $project->name,
+                'user_id' => $project->user_id,
+            ],
+            'input' => [
+                'name' => $project->name,
+                'entities' => $specification['entities'],
+            ],
+            'dsl' => $dsl,
+        ];
+
+        file_put_contents(
+            $logPath,
+            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL
+        );
     }
 
     private function initialEntities(GeneratedProject $project): array
