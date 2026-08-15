@@ -56,7 +56,7 @@ class GeneratedProjectController extends Controller
             return $project;
         });
 
-        GenerateLaravelProject::dispatch($project->id);
+        GenerateLaravelProject::dispatchSync($project->id);
 
         return redirect()->route('generator.show', $project);
     }
@@ -96,7 +96,7 @@ class GeneratedProjectController extends Controller
             $this->persistSpecification($project, $dsl, $specification);
         });
 
-        GenerateLaravelProject::dispatch($project->id);
+        GenerateLaravelProject::dispatchSync($project->id);
 
         return redirect()->route('generator.show', $project);
     }
@@ -140,7 +140,7 @@ class GeneratedProjectController extends Controller
             'zip_path' => null,
         ])->save();
 
-        GenerateLaravelProject::dispatch($project->id);
+        GenerateLaravelProject::dispatchSync($project->id);
 
         return redirect()->route('generator.show', $project);
     }

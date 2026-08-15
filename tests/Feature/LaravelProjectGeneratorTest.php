@@ -63,7 +63,9 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString('This is a complete Laravel application', $readme);
         $this->assertStringContainsString('composer install', $readme);
         $this->assertStringContainsString('npm install', $readme);
+        $this->assertStringContainsString('CREATE DATABASE inventorydemo', $readme);
         $this->assertStringContainsString('php artisan migrate', $readme);
+        $this->assertStringNotContainsString('database.sqlite', $readme);
         $this->assertStringNotContainsString('Generisani entiteti', $readme);
 
         $webRoutes = File::get($this->outputDir.'/routes/web.php');
@@ -77,13 +79,16 @@ class LaravelProjectGeneratorTest extends TestCase
 
         $env = File::get($this->outputDir.'/.env.example');
         $this->assertStringContainsString('APP_NAME=InventoryDemo', $env);
-        $this->assertStringContainsString('DB_CONNECTION=sqlite', $env);
+        $this->assertStringContainsString('DB_CONNECTION=mysql', $env);
+        $this->assertStringContainsString('DB_DATABASE=inventorydemo', $env);
 
         $composer = json_decode(File::get($this->outputDir.'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame('^8.4', $composer['require']['php']);
+        $this->assertNotContains('@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"', $composer['scripts']['setup']);
 
         $phpunit = File::get($this->outputDir.'/phpunit.xml');
-        $this->assertStringContainsString('name="DB_CONNECTION" value="sqlite"', $phpunit);
+        $this->assertStringContainsString('name="DB_CONNECTION" value="mysql"', $phpunit);
+        $this->assertStringContainsString('name="DB_DATABASE" value="inventorydemo_test"', $phpunit);
     }
 
     private function specification(): array

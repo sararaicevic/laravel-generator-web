@@ -14,7 +14,7 @@
                     <x-nav-link :href="route('generator.create')" :active="request()->routeIs('generator.create')">
                         {{ __('New Project') }}
                     </x-nav-link>
-                    <x-nav-link :href="route('generator.index')" :active="request()->routeIs('generator.*')">
+                    <x-nav-link :href="route('generator.index')" :active="request()->routeIs('generator.index', 'generator.show', 'generator.edit')">
                         {{ __('My Projects') }}
                     </x-nav-link>
                 </div>
@@ -69,7 +69,7 @@
             <x-responsive-nav-link :href="route('generator.create')" :active="request()->routeIs('generator.create')">
                 {{ __('New Project') }}
             </x-responsive-nav-link>
-            <x-responsive-nav-link :href="route('generator.index')" :active="request()->routeIs('generator.*')">
+            <x-responsive-nav-link :href="route('generator.index')" :active="request()->routeIs('generator.index', 'generator.show', 'generator.edit')">
                 {{ __('My Projects') }}
             </x-responsive-nav-link>
         </div>

@@ -73,9 +73,11 @@ class LaravelProjectGenerator
             $this->copyBaseFile($file, $outputDir.'/'.$file);
         }
 
+        $databaseName = $this->databaseName($appName);
+
         $this->write($outputDir.'/composer.json', $this->composerJson($appName));
         $this->write($outputDir.'/.env.example', $this->envExample($appName));
-        $this->write($outputDir.'/phpunit.xml', $this->phpunitXml());
+        $this->write($outputDir.'/phpunit.xml', $this->phpunitXml($databaseName));
 
         $this->copyBaseFile('bootstrap/app.php', $outputDir.'/bootstrap/app.php');
         $this->copyBaseFile('bootstrap/providers.php', $outputDir.'/bootstrap/providers.php');
@@ -183,8 +185,6 @@ class LaravelProjectGenerator
                     'composer install',
                     '@php -r "file_exists(\'.env\') || copy(\'.env.example\', \'.env\');"',
                     '@php artisan key:generate',
-                    '@php -r "is_dir(\'database\') || mkdir(\'database\', 0775, true);"',
-                    '@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"',
                     '@php artisan migrate --force',
                     'npm install',
                     'npm run build',
@@ -209,7 +209,6 @@ class LaravelProjectGenerator
                 ],
                 'post-create-project-cmd' => [
                     '@php artisan key:generate --ansi',
-                    '@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"',
                     '@php artisan migrate --graceful --ansi',
                 ],
             ],
@@ -235,6 +234,7 @@ class LaravelProjectGenerator
         $quotedAppName = str_contains($appName, ' ')
             ? '"'.addcslashes($appName, "\"\\").'"'
             : $appName;
+        $databaseName = $this->databaseName($appName);
 
         return <<<ENV
 APP_NAME={$quotedAppName}
@@ -256,12 +256,12 @@ LOG_STACK=single
 LOG_DEPRECATIONS_CHANNEL=null
 LOG_LEVEL=debug
 
-DB_CONNECTION=sqlite
-# DB_HOST=127.0.0.1
-# DB_PORT=3306
-# DB_DATABASE=laravel
-# DB_USERNAME=root
-# DB_PASSWORD=
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE={$databaseName}
+DB_USERNAME=root
+DB_PASSWORD=
 
 SESSION_DRIVER=database
 SESSION_LIFETIME=120
@@ -302,9 +302,11 @@ VITE_APP_NAME="\${APP_NAME}"
 ENV;
     }
 
-    private function phpunitXml(): string
+    private function phpunitXml(string $databaseName): string
     {
-        return <<<'XML'
+        $testDatabaseName = $databaseName.'_test';
+
+        return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
@@ -329,8 +331,12 @@ ENV;
         <server name="APP_KEY" value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="/>
         <server name="BCRYPT_ROUNDS" value="4"/>
         <server name="CACHE_STORE" value="array"/>
-        <server name="DB_CONNECTION" value="sqlite"/>
-        <server name="DB_DATABASE" value=":memory:"/>
+        <server name="DB_CONNECTION" value="mysql"/>
+        <server name="DB_HOST" value="127.0.0.1"/>
+        <server name="DB_PORT" value="3306"/>
+        <server name="DB_DATABASE" value="{$testDatabaseName}"/>
+        <server name="DB_USERNAME" value="root"/>
+        <server name="DB_PASSWORD" value=""/>
         <server name="MAIL_MAILER" value="array"/>
         <server name="QUEUE_CONNECTION" value="sync"/>
         <server name="SESSION_DRIVER" value="array"/>
@@ -338,6 +344,14 @@ ENV;
 </phpunit>
 
 XML;
+    }
+
+    private function databaseName(string $appName): string
+    {
+        $name = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', $appName));
+        $name = trim($name, '_');
+
+        return $name !== '' ? $name : 'generated_laravel_app';
     }
 
     private function indent(string $content, int $spaces): string
@@ -379,6 +393,7 @@ XML;
 
     private function readme(string $appName, array $entities): string
     {
+        $databaseName = $this->databaseName($appName);
         $list = collect($entities)
             ->map(function (array $entity) {
                 $relations = collect($entity['relations'] ?? [])
@@ -403,7 +418,7 @@ This is a complete Laravel application generated from a DSL specification. It in
 - PHP 8.4 or newer
 - Composer
 - Node.js and npm
-- SQLite, MySQL, or another database supported by Laravel
+- MySQL or MariaDB
 
 ## Setup
 
@@ -426,13 +441,13 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-4. Create the default SQLite database file:
+4. Create the MySQL database:
 
 ```bash
-touch database/database.sqlite
+mysql -u root -p -e "CREATE DATABASE {$databaseName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 ```
 
-If you want to use MySQL or PostgreSQL, update the `DB_*` values in `.env` before running migrations.
+If your MySQL username, password, host, or database name is different, update the `DB_*` values in `.env` before running migrations.
 
 5. Run database migrations:
 

@@ -53,7 +53,7 @@ DSL,
         $this->assertFileExists(storage_path('app/'.$project->dsl_path));
         $this->assertSame('belongsTo', GeneratedRelation::query()->where('target', 'Category')->firstOrFail()->type);
 
-        Bus::assertDispatched(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
+        Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }
 
     public function test_guests_cannot_access_generator_form(): void
@@ -157,7 +157,7 @@ DSL,
         $this->assertSame(['Product'], $project->entities()->pluck('name')->all());
         $this->assertSame(['name', 'sku'], GeneratedEntity::query()->where('name', 'Product')->firstOrFail()->fields()->pluck('name')->all());
 
-        Bus::assertDispatched(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
+        Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }
 
     public function test_authenticated_user_can_rerun_failed_project_generation(): void
@@ -203,6 +203,6 @@ DSL);
         $this->assertNull($project->output_path);
         $this->assertNull($project->zip_path);
 
-        Bus::assertDispatched(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
+        Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }
 }
