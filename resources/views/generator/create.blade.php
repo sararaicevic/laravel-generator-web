@@ -11,8 +11,8 @@
         </div>
     </x-slot>
 
-    <div class="py-8" x-data="generatorBuilder({ projectName: @js(old('name', $project?->name ?? '')), entities: @js($initialEntities) })">
-        <form method="POST" action="{{ $project ? route('generator.update', $project) : route('generator.store') }}">
+    <div class="py-8" x-data="generatorBuilder({ projectName: @js(old('name', $project?->name ?? '')), entities: @js($initialEntities) })" x-init="syncAllRelationships()">
+        <form method="POST" action="{{ $project ? route('generator.update', $project) : route('generator.store') }}" @submit="syncAllRelationships()">
             @csrf
             @if($project)
                 @method('PUT')
@@ -229,9 +229,37 @@
                                     </template>
 
                                     <div class="space-y-3" x-show="selectedEntity.relations.length > 0">
-                                        <template x-for="(relation, relationIndex) in selectedEntity.relations" :key="relationIndex">
-                                            <div class="grid gap-3 rounded-md border border-[#E2E8F0] p-4 md:grid-cols-[180px_minmax(180px,1fr)_44px] md:items-center">
-                                                <div>
+                                        <template x-for="(relation, relationIndex) in selectedEntity.relations" :key="relation._id || relationIndex">
+                                            <div class="grid gap-3 rounded-md border border-[#E2E8F0] p-4 md:grid-cols-[180px_minmax(180px,1fr)_minmax(180px,1fr)_44px] md:items-center">
+                                                <template x-if="relation._managedInverse">
+                                                    <div class="md:col-span-4">
+                                                        <div class="grid gap-3 rounded-md bg-[#F8FAFC] px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+                                                            <div>
+                                                                <div class="text-sm font-semibold text-[#1E293B]">
+                                                                    <span x-text="relation.type"></span>
+                                                                    <span class="text-[#64748B]">-></span>
+                                                                    <span x-text="relation.target"></span>
+                                                                </div>
+                                                                <p class="mt-1 text-xs font-semibold text-[#64748B]" x-show="relation.type === 'belongsToMany'">
+                                                                    Pivot: <span x-text="relation.pivot_table"></span>
+                                                                </p>
+                                                                <p class="mt-1 text-xs text-[#64748B]">Auto-added inverse relationship</p>
+                                                            </div>
+                                                            <span class="rounded-full bg-[#EEF2FF] px-2 py-1 text-xs font-semibold text-[#6366F1]">Auto</span>
+                                                            <button
+                                                                type="button"
+                                                                class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50"
+                                                                title="Remove relationship pair"
+                                                                @click="removeRelation(selectedEntity, relationIndex)"
+                                                            >
+                                                                X
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="!relation._managedInverse">
+                                                    <div>
                                                     <div class="mb-1 flex items-center justify-between gap-2">
                                                         <label class="block text-xs font-medium text-[#64748B]">Relationship Type</label>
                                                         <span
@@ -243,22 +271,22 @@
                                                     <select
                                                         class="ui-select block w-full text-sm"
                                                         x-model="relation.type"
-                                                        :disabled="relation._managedInverse"
-                                                        @change="syncAllRelationships()"
+                                                        @change="updateRelationshipType(selectedEntity, selectedEntityIndex, relation)"
                                                     >
                                                         <template x-for="type in relationTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
                                                         </template>
                                                     </select>
                                                 </div>
+                                                </template>
 
-                                                <div>
+                                                <template x-if="!relation._managedInverse">
+                                                    <div>
                                                     <label class="mb-1 block text-xs font-medium text-[#64748B]">Related Model</label>
                                                     <select
                                                         class="ui-select block w-full text-sm"
                                                         x-model="relation.target"
-                                                        :disabled="relation._managedInverse"
-                                                        @change="syncAllRelationships()"
+                                                        @change="updateRelationshipTarget(selectedEntity, selectedEntityIndex, relation)"
                                                     >
                                                         <option value="">Choose model</option>
                                                         <template x-for="target in availableRelationTargets" :key="target.name">
@@ -267,17 +295,32 @@
                                                     </select>
                                                     <p class="mt-1 text-xs text-[#64748B]" x-text="relationshipDescription(relation)"></p>
                                                 </div>
+                                                </template>
 
-                                                <button
-                                                    type="button"
-                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50 md:mt-5"
-                                                    :class="relation._managedInverse ? 'cursor-not-allowed opacity-40' : ''"
-                                                    :disabled="relation._managedInverse"
-                                                    title="Remove relationship"
-                                                    @click="removeRelation(selectedEntity, relationIndex)"
-                                                >
-                                                    X
-                                                </button>
+                                                <template x-if="!relation._managedInverse && relation.type === 'belongsToMany'">
+                                                    <div>
+                                                        <label class="mb-1 block text-xs font-medium text-[#64748B]">Pivot Table</label>
+                                                        <input
+                                                            type="text"
+                                                            class="ui-input block w-full text-sm"
+                                                            x-model="relation.pivot_table"
+                                                            placeholder="product_tag"
+                                                            @input="updatePivotTable(relation)"
+                                                        >
+                                                        <p class="mt-1 text-xs text-[#64748B]">Laravel default can be changed.</p>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="!relation._managedInverse">
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50 md:mt-5"
+                                                        title="Remove relationship"
+                                                        @click="removeRelation(selectedEntity, relationIndex)"
+                                                    >
+                                                        X
+                                                    </button>
+                                                </template>
                                             </div>
                                         </template>
                                     </div>

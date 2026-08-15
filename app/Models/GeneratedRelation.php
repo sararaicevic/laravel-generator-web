@@ -10,6 +10,7 @@ class GeneratedRelation extends Model
         'generated_entity_id',
         'type',
         'target',
+        'pivot_table',
     ];
 
     public function entity()

@@ -151,6 +151,22 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString("\$account->password ? 'Set' : '-'", $showView);
     }
 
+    public function test_it_generates_custom_pivot_table_for_many_to_many_relationships(): void
+    {
+        (new LaravelProjectGenerator())->generate($this->customPivotSpecification(), $this->outputDir);
+
+        $productModel = File::get($this->outputDir.'/app/Models/Product.php');
+        $tagModel = File::get($this->outputDir.'/app/Models/Tag.php');
+
+        $this->assertStringContainsString("return \$this->belongsToMany(Tag::class, 'catalog_labels')->withTimestamps();", $productModel);
+        $this->assertStringContainsString("return \$this->belongsToMany(Product::class, 'catalog_labels')->withTimestamps();", $tagModel);
+
+        $pivotMigration = File::get(glob($this->outputDir.'/database/migrations/*_create_catalog_labels_table.php')[0]);
+        $this->assertStringContainsString("Schema::create('catalog_labels'", $pivotMigration);
+        $this->assertStringContainsString("\$table->foreignId('product_id')->constrained('products')->cascadeOnDelete();", $pivotMigration);
+        $this->assertStringContainsString("\$table->foreignId('tag_id')->constrained('tags')->cascadeOnDelete();", $pivotMigration);
+    }
+
     private function specification(): array
     {
         return [
@@ -257,6 +273,77 @@ class LaravelProjectGeneratorTest extends TestCase
                             'target_variable' => 'product',
                             'target_collection' => 'products',
                             'pivot_table' => 'product_tag',
+                            'pivot_models' => ['Product', 'Tag'],
+                            'inferred' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private function customPivotSpecification(): array
+    {
+        return [
+            'app' => 'CatalogDemo',
+            'entities' => [
+                [
+                    'name' => 'Product',
+                    'table' => 'products',
+                    'route' => 'products',
+                    'variable' => 'product',
+                    'collection' => 'products',
+                    'fields' => [
+                        [
+                            'name' => 'name',
+                            'label' => 'Name',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                    ],
+                    'relations' => [
+                        [
+                            'type' => 'belongsToMany',
+                            'source' => 'Product',
+                            'target' => 'Tag',
+                            'method' => 'tags',
+                            'foreign_key' => null,
+                            'target_table' => 'tags',
+                            'target_variable' => 'tag',
+                            'target_collection' => 'tags',
+                            'pivot_table' => 'catalog_labels',
+                            'pivot_models' => ['Product', 'Tag'],
+                            'inferred' => false,
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'Tag',
+                    'table' => 'tags',
+                    'route' => 'tags',
+                    'variable' => 'tag',
+                    'collection' => 'tags',
+                    'fields' => [
+                        [
+                            'name' => 'name',
+                            'label' => 'Name',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                    ],
+                    'relations' => [
+                        [
+                            'type' => 'belongsToMany',
+                            'source' => 'Tag',
+                            'target' => 'Product',
+                            'method' => 'products',
+                            'foreign_key' => null,
+                            'target_table' => 'products',
+                            'target_variable' => 'product',
+                            'target_collection' => 'products',
+                            'pivot_table' => 'catalog_labels',
                             'pivot_models' => ['Product', 'Tag'],
                             'inferred' => true,
                         ],

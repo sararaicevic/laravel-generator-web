@@ -3,13 +3,18 @@
 import Alpine from 'alpinejs';
 
 window.generatorBuilder = function generatorBuilder(config = {}) {
-    const normalizeEntities = (entities) => entities.map((entity) => ({
+    const normalizeEntities = (entities) => entities.map((entity, entityIndex) => ({
         name: entity.name || '',
         fields: Array.isArray(entity.fields) ? entity.fields : [],
         relations: Array.isArray(entity.relations)
-            ? entity.relations.map((relation) => ({
+            ? entity.relations.map((relation, relationIndex) => ({
+                _id: relation._id || `existing_${entityIndex}_${relationIndex}`,
+                _inverseOf: relation._inverseOf || null,
+                _managedInverse: Boolean(relation._managedInverse),
+                _pivotCustomized: Boolean(relation._pivotCustomized),
                 type: relation.type || 'belongsTo',
                 target: relation.target || '',
+                pivot_table: relation.pivot_table || relation.pivotTable || '',
             }))
             : [],
     }));
@@ -20,6 +25,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         entities: Array.isArray(config.entities) ? normalizeEntities(config.entities) : [],
         fieldTypes: ['string', 'text', 'integer', 'bigInteger', 'decimal', 'boolean', 'date', 'datetime', 'email', 'password'],
         relationTypes: ['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'],
+        relationshipSequence: 1,
 
         get selectedEntity() {
             return this.entities[this.selectedEntityIndex] || null;
@@ -86,8 +92,13 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         addRelation(entity) {
             const target = this.availableRelationTargets[0]?.name || '';
             const relation = {
+                _id: this.createRelationshipId(),
+                _inverseOf: null,
+                _managedInverse: false,
+                _pivotCustomized: false,
                 type: 'belongsTo',
                 target,
+                pivot_table: '',
             };
 
             entity.relations.push(relation);
@@ -95,27 +106,52 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
         },
 
         removeRelation(entity, index) {
-            if (entity.relations[index]?._managedInverse) {
+            const relation = entity.relations[index];
+            if (!relation) {
                 return;
             }
 
-            entity.relations.splice(index, 1);
+            this.removeRelationshipPair(entity, relation);
             this.syncAllRelationships();
         },
 
         syncAllRelationships() {
+            this.ensureRelationshipIds();
+            this.removeOrphanManagedInverses();
+
             this.entities.forEach((entity) => {
-                entity.relations = entity.relations.filter((relation) => !relation._managedInverse);
+                entity.relations = entity.relations
+                    .filter((relation) => !relation._managedInverse)
+                    .concat(entity.relations.filter((relation) => relation._managedInverse));
             });
 
             this.entities.forEach((entity, index) => {
                 entity.relations
                     .filter((relation) => !relation._managedInverse)
-                    .forEach((relation) => this.addInverseRelationship(entity, index, relation));
+                    .forEach((relation) => {
+                        this.prepareRelationForSync(entity, index, relation);
+                        this.upsertInverseRelationship(entity, index, relation);
+                    });
             });
         },
 
-        addInverseRelationship(sourceEntity, sourceIndex, relation) {
+        prepareRelationForSync(sourceEntity, sourceIndex, relation) {
+            if (relation.type !== 'belongsToMany') {
+                return;
+            }
+
+            const defaultPivot = this.defaultPivotTable(
+                this.entityModelName(sourceEntity, sourceIndex),
+                this.toPascalCase(relation.target, ''),
+            );
+
+            if (!relation.pivot_table || !relation._pivotCustomized) {
+                relation.pivot_table = defaultPivot;
+                relation._pivotCustomized = false;
+            }
+        },
+
+        upsertInverseRelationship(sourceEntity, sourceIndex, relation) {
             const sourceName = this.entityModelName(sourceEntity, sourceIndex);
             const targetIndex = this.entities.findIndex((entity, index) => (
                 index !== sourceIndex
@@ -129,15 +165,64 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             const targetEntity = this.entities[targetIndex];
             const inverseType = this.inverseRelationshipType(relation.type);
 
-            if (!inverseType || this.hasEquivalentRelationship(targetEntity, inverseType, sourceName)) {
+            if (!inverseType) {
+                return;
+            }
+
+            const existingInverse = targetEntity.relations.find((candidate) => (
+                candidate._managedInverse && candidate._inverseOf === relation._id
+            ));
+
+            if (existingInverse) {
+                existingInverse.type = inverseType;
+                existingInverse.target = sourceName;
+                existingInverse.pivot_table = relation.pivot_table || '';
+                existingInverse._pivotCustomized = Boolean(relation._pivotCustomized);
+                return;
+            }
+
+            if (this.hasEquivalentRelationship(targetEntity, inverseType, sourceName)) {
                 return;
             }
 
             targetEntity.relations.push({
+                _id: this.createRelationshipId(),
+                _inverseOf: relation._id,
+                _pivotCustomized: Boolean(relation._pivotCustomized),
                 type: inverseType,
                 target: sourceName,
+                pivot_table: relation.pivot_table || '',
                 _managedInverse: true,
             });
+        },
+
+        updateRelationshipType(entity, entityIndex, relation) {
+            if (relation.type === 'belongsToMany') {
+                relation.pivot_table = this.defaultPivotTable(
+                    this.entityModelName(entity, entityIndex),
+                    this.toPascalCase(relation.target, ''),
+                );
+                relation._pivotCustomized = false;
+            }
+
+            this.syncAllRelationships();
+        },
+
+        updateRelationshipTarget(entity, entityIndex, relation) {
+            if (relation.type === 'belongsToMany' && !relation._pivotCustomized) {
+                relation.pivot_table = this.defaultPivotTable(
+                    this.entityModelName(entity, entityIndex),
+                    this.toPascalCase(relation.target, ''),
+                );
+            }
+
+            this.syncAllRelationships();
+        },
+
+        updatePivotTable(relation) {
+            relation.pivot_table = this.cleanTableName(relation.pivot_table);
+            relation._pivotCustomized = relation.pivot_table !== '';
+            this.syncAllRelationships();
         },
 
         inverseRelationshipType(type) {
@@ -158,6 +243,39 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             ));
         },
 
+        removeRelationshipPair(sourceEntity, relation) {
+            const sourceIndex = this.entities.indexOf(sourceEntity);
+            const sourceName = this.entityModelName(sourceEntity, sourceIndex);
+            const targetName = this.toPascalCase(relation.target, '');
+            const inverseType = this.inverseRelationshipType(relation.type);
+            const relationshipId = relation._managedInverse ? relation._inverseOf : relation._id;
+
+            this.entities.forEach((entity, entityIndex) => {
+                const entityName = this.entityModelName(entity, entityIndex);
+
+                entity.relations = entity.relations.filter((candidate) => {
+                    if (candidate._id === relationshipId || candidate._inverseOf === relationshipId) {
+                        return false;
+                    }
+
+                    return !(
+                        entityName === targetName
+                        && !candidate._managedInverse
+                        && this.toPascalCase(candidate.target, '') === sourceName
+                        && this.relationshipTypesMatch(candidate.type, inverseType)
+                    );
+                });
+            });
+        },
+
+        relationshipTypesMatch(type, expectedType) {
+            if (expectedType === 'hasMany') {
+                return ['hasOne', 'hasMany'].includes(type);
+            }
+
+            return type === expectedType;
+        },
+
         removeDirectRelationsForEntity(removedEntity) {
             const removedName = this.toPascalCase(removedEntity?.name, '');
             if (!removedName) {
@@ -171,12 +289,72 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             });
         },
 
+        ensureRelationshipIds() {
+            this.entities.forEach((entity) => {
+                entity.relations.forEach((relation) => {
+                    if (!relation._id) {
+                        relation._id = this.createRelationshipId();
+                    }
+                    relation._managedInverse = Boolean(relation._managedInverse);
+                    relation._inverseOf = relation._inverseOf || null;
+                    relation._pivotCustomized = Boolean(relation._pivotCustomized);
+                    relation.pivot_table = relation.pivot_table || '';
+                });
+            });
+        },
+
+        removeOrphanManagedInverses() {
+            const directIds = new Set();
+
+            this.entities.forEach((entity) => {
+                entity.relations
+                    .filter((relation) => !relation._managedInverse)
+                    .forEach((relation) => directIds.add(relation._id));
+            });
+
+            this.entities.forEach((entity) => {
+                entity.relations = entity.relations.filter((relation) => (
+                    !relation._managedInverse || directIds.has(relation._inverseOf)
+                ));
+            });
+        },
+
+        createRelationshipId() {
+            const id = `relation_${Date.now()}_${this.relationshipSequence}`;
+            this.relationshipSequence += 1;
+
+            return id;
+        },
+
         entityModelName(entity, index) {
             return this.toPascalCase(entity?.name, index === undefined ? '' : `Model${index + 1}`);
         },
 
         relationshipDescription(relation) {
             return relation._managedInverse ? 'Auto-added inverse relationship' : 'Direct relationship';
+        },
+
+        defaultPivotTable(source, target) {
+            if (!source || !target) {
+                return '';
+            }
+
+            return [source, target]
+                .map((model) => this.toSnakeCase(model))
+                .sort()
+                .join('_');
+        },
+
+        toSnakeCase(value) {
+            return String(value || '')
+                .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+                .replace(/[^A-Za-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .toLowerCase();
+        },
+
+        cleanTableName(value) {
+            return this.toSnakeCase(value);
         },
 
         entityLabel(entity, index) {
@@ -239,12 +417,19 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             return `    ${this.cleanFieldName(field.name, `field${index + 1}`)}: ${field.type}${modifiers.length ? ` ${modifiers.join(' ')}` : ''}`;
         },
 
-        relationLine(relation) {
+        relationLine(entity, relation) {
             if (!relation.type || !relation.target) {
                 return null;
             }
 
-            return `    ${relation.type} ${this.toPascalCase(relation.target, 'TargetModel')}`;
+            const target = this.toPascalCase(relation.target, 'TargetModel');
+            const pivot = relation.type === 'belongsToMany'
+                && relation.pivot_table
+                && relation.pivot_table !== this.defaultPivotTable(this.toPascalCase(entity.name, ''), target)
+                ? ` pivot ${this.cleanTableName(relation.pivot_table)}`
+                : '';
+
+            return `    ${relation.type} ${target}${pivot}`;
         },
 
         entityBlock(entity, index) {
@@ -253,14 +438,13 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
                 ? entity.fields.map((field, fieldIndex) => this.fieldLine(field, fieldIndex)).join('\n')
                 : '    # Add field';
             const relationLines = entity.relations.length > 0
-                ? `\n${entity.relations.map((relation) => this.relationLine(relation)).filter(Boolean).join('\n')}`
+                ? `\n${entity.relations.map((relation) => this.relationLine(entity, relation)).filter(Boolean).join('\n')}`
                 : '';
 
             return `  entity ${entityName} {\n${fieldLines}${relationLines}\n  }`;
         },
 
         get dslSource() {
-            this.syncAllRelationships();
             const appName = this.toPascalCase(this.projectName, 'GeneratedApplication');
             const entityBlocks = this.entities.length > 0
                 ? this.entities.map((entity, index) => this.entityBlock(entity, index)).join('\n\n')

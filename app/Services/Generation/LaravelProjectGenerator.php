@@ -678,11 +678,19 @@ PHP;
         }
 
         if ($relation['type'] === 'belongsToMany') {
+            $defaultPivotTable = collect([$relation['source'], $relation['target']])
+                ->map(fn (string $model) => Str::snake($model))
+                ->sort()
+                ->implode('_');
+            $pivotArgument = ($relation['pivot_table'] ?? null) && $relation['pivot_table'] !== $defaultPivotTable
+                ? ", '{$relation['pivot_table']}'"
+                : '';
+
             return <<<PHP
 
     public function {$method}()
     {
-        return \$this->belongsToMany({$target}::class)->withTimestamps();
+        return \$this->belongsToMany({$target}::class{$pivotArgument})->withTimestamps();
     }
 PHP;
         }

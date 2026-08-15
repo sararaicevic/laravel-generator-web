@@ -149,6 +149,28 @@ DSL);
         $this->assertTrue($tag['relations'][0]['inferred']);
     }
 
+    public function test_it_uses_custom_pivot_table_for_belongs_to_many_relations(): void
+    {
+        $specification = (new DslParser())->parse(<<<'DSL'
+app BlogPlatform {
+  entity Post {
+    title: string required
+    belongsToMany Tag pivot content_labels
+  }
+
+  entity Tag {
+    name: string required
+  }
+}
+DSL);
+
+        $post = collect($specification['entities'])->firstWhere('name', 'Post');
+        $tag = collect($specification['entities'])->firstWhere('name', 'Tag');
+
+        $this->assertSame('content_labels', $post['relations'][0]['pivot_table']);
+        $this->assertSame('content_labels', $tag['relations'][0]['pivot_table']);
+    }
+
     public function test_it_rejects_relations_to_unknown_entities(): void
     {
         $this->expectException(DslParseException::class);
@@ -171,6 +193,24 @@ DSL);
 app InventorySystem {
   entity Product {
     name: json required
+  }
+}
+DSL);
+    }
+
+    public function test_it_rejects_pivot_table_on_non_many_to_many_relations(): void
+    {
+        $this->expectException(DslParseException::class);
+
+        (new DslParser())->parse(<<<'DSL'
+app InventorySystem {
+  entity Category {
+    name: string required
+  }
+
+  entity Product {
+    name: string required
+    belongsTo Category pivot category_product
   }
 }
 DSL);

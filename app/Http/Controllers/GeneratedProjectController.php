@@ -225,6 +225,7 @@ class GeneratedProjectController extends Controller
                 $entity->relations()->create([
                     'type' => $relationSpec['type'],
                     'target' => $relationSpec['target'],
+                    'pivot_table' => $relationSpec['pivot_table'] ?? null,
                 ]);
             }
         }
@@ -279,6 +280,7 @@ class GeneratedProjectController extends Controller
                     ->map(fn ($relation): array => [
                         'type' => $relation->type,
                         'target' => $relation->target,
+                        'pivot_table' => $relation->pivot_table,
                     ])
                     ->values()
                     ->all(),

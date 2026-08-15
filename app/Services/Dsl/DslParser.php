@@ -98,16 +98,21 @@ class DslParser
                 continue;
             }
 
-            if (preg_match('/^('.implode('|', self::RELATION_TYPES).')\s+([A-Z][A-Za-z0-9_]*)$/', $line, $relationMatch)) {
+            if (preg_match('/^('.implode('|', self::RELATION_TYPES).')\s+([A-Z][A-Za-z0-9_]*)(?:\s+pivot\s+([a-z][a-z0-9_]*))?$/', $line, $relationMatch)) {
                 $type = $relationMatch[1];
                 $target = $relationMatch[2];
+                $pivotTable = $relationMatch[3] ?? null;
                 $key = $type.'_'.$target;
+
+                if ($pivotTable !== null && $type !== 'belongsToMany') {
+                    throw new DslParseException("Pivot tabela može biti definisana samo za belongsToMany relaciju {$entityName}.{$type} {$target}.");
+                }
 
                 if (isset($relations[$key])) {
                     throw new DslParseException("Relacija {$entityName}.{$type} {$target} je definisana više puta.");
                 }
 
-                $relations[$key] = $this->relationSpec($entityName, $type, $target);
+                $relations[$key] = $this->relationSpec($entityName, $type, $target, false, $pivotTable);
                 continue;
             }
 
@@ -153,7 +158,7 @@ class DslParser
         return [array_values($fields), array_values($relations)];
     }
 
-    private function relationSpec(string $source, string $type, string $target, bool $inferred = false): array
+    private function relationSpec(string $source, string $type, string $target, bool $inferred = false, ?string $pivotTable = null): array
     {
         $targetVariable = Str::camel($target);
         $targetCollection = Str::camel(Str::pluralStudly($target));
@@ -171,7 +176,7 @@ class DslParser
             'target_table' => Str::snake(Str::pluralStudly($target)),
             'target_variable' => $targetVariable,
             'target_collection' => $targetCollection,
-            'pivot_table' => $type === 'belongsToMany' ? $this->pivotTable($source, $target) : null,
+            'pivot_table' => $type === 'belongsToMany' ? ($pivotTable ?: $this->pivotTable($source, $target)) : null,
             'pivot_models' => $type === 'belongsToMany' ? $pivotModels : [],
             'inferred' => $inferred,
         ];
@@ -211,7 +216,7 @@ class DslParser
                 }
 
                 if ($relation['type'] === 'belongsToMany') {
-                    $this->addRelationIfMissing($entities, $target, 'belongsToMany', $entityName);
+                    $this->addRelationIfMissing($entities, $target, 'belongsToMany', $entityName, [], $relation['pivot_table']);
                 }
             }
         }
@@ -223,7 +228,7 @@ class DslParser
         return array_values($entities);
     }
 
-    private function addRelationIfMissing(array &$entities, string $source, string $type, string $target, array $equivalentTypes = []): void
+    private function addRelationIfMissing(array &$entities, string $source, string $type, string $target, array $equivalentTypes = [], ?string $pivotTable = null): void
     {
         $equivalentTypes = $equivalentTypes === [] ? [$type] : $equivalentTypes;
 
@@ -233,7 +238,7 @@ class DslParser
             }
         }
 
-        $entities[$source]['relations'][] = $this->relationSpec($source, $type, $target, true);
+        $entities[$source]['relations'][] = $this->relationSpec($source, $type, $target, true, $pivotTable);
     }
 
     private function pivotTable(string $source, string $target): string

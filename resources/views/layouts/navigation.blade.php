@@ -1,4 +1,4 @@
-<nav x-data="{ open: false }" class="border-b border-[#E2E8F0] bg-white/85 backdrop-blur-xl">
+<nav x-data="{ open: false }" class="relative z-50 border-b border-[#E2E8F0] bg-white/85 backdrop-blur-xl">
     <div class="app-container">
         <div class="flex h-16 justify-between">
             <div class="flex items-center">
@@ -21,18 +21,33 @@
             </div>
 
             <div class="hidden sm:flex sm:items-center">
-                <details class="group relative">
-                    <summary class="inline-flex cursor-pointer list-none items-center gap-3 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-semibold text-[#1E293B] shadow-sm transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#6366F1] [&::-webkit-details-marker]:hidden">
+                <div x-data="{ userMenuOpen: false }" class="relative" @click.outside="userMenuOpen = false">
+                    <button
+                        type="button"
+                        class="inline-flex cursor-pointer items-center gap-3 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-semibold text-[#1E293B] shadow-sm transition hover:bg-[#F8FAFC] focus:outline-none focus:ring-2 focus:ring-[#6366F1]"
+                        @click.stop="userMenuOpen = ! userMenuOpen"
+                        :aria-expanded="userMenuOpen.toString()"
+                    >
                         <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[#E0E7FF] text-xs font-bold text-[#6366F1]">
                             {{ Str::of(Auth::user()->name)->substr(0, 1)->upper() }}
                         </span>
                         <span>{{ Auth::user()->name }}</span>
-                        <svg class="h-4 w-4 text-[#64748B] transition group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <svg class="h-4 w-4 text-[#64748B] transition" :class="userMenuOpen ? 'rotate-180' : ''" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                         </svg>
-                    </summary>
+                    </button>
 
-                    <div class="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-[#E2E8F0] bg-white py-1 shadow-xl shadow-slate-200/80">
+                    <div
+                        x-show="userMenuOpen"
+                        x-transition:enter="transition ease-out duration-150"
+                        x-transition:enter-start="opacity-0 translate-y-1"
+                        x-transition:enter-end="opacity-100 translate-y-0"
+                        x-transition:leave="transition ease-in duration-100"
+                        x-transition:leave-start="opacity-100 translate-y-0"
+                        x-transition:leave-end="opacity-0 translate-y-1"
+                        class="absolute right-0 top-full z-[100] mt-2 w-56 overflow-hidden rounded-lg border border-[#E2E8F0] bg-white py-1 shadow-xl shadow-slate-200/80"
+                        style="display: none;"
+                    >
                         <div class="border-b border-[#E2E8F0] px-4 py-3">
                             <div class="truncate text-sm font-semibold text-[#1E293B]">{{ Auth::user()->name }}</div>
                             <div class="truncate text-xs text-[#64748B]">{{ Auth::user()->email }}</div>
@@ -49,7 +64,7 @@
                             </button>
                         </form>
                     </div>
-                </details>
+                </div>
             </div>
 
             <div class="-me-2 flex items-center sm:hidden">
