@@ -1,0 +1,12 @@
+FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+
+# Copy your built headless generator fat-jar here.
+# Example:
+#   cp org.xtext.example.mydsl.cli/build/libs/mydsl-gen-all.jar docker/mydsl-generator/mydsl-gen.jar
+COPY mydsl-gen.jar /app/mydsl-gen.jar
+
+# Provide a simple default command: the Laravel app can override/append args.
+ENTRYPOINT ["java","-jar","/app/mydsl-gen.jar"]
+

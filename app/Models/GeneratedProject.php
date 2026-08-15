@@ -8,6 +8,7 @@ class GeneratedProject extends Model
 {
     protected $fillable = [
         'user_id',
+        'uuid',
         'name',
         'dsl_path',
         'output_path',

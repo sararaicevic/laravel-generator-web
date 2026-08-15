@@ -18,6 +18,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/generator', [GeneratedProjectController::class, 'create'])->name('generator.create');
     Route::post('/generator', [GeneratedProjectController::class, 'store'])->name('generator.store');
+    Route::get('/generator/{project}', [GeneratedProjectController::class, 'show'])->name('generator.show');
+    Route::get('/generator/{project}/download', [GeneratedProjectController::class, 'download'])->name('generator.download');
 });
 
 
