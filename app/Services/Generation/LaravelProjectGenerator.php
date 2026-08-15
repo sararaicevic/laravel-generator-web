@@ -4,15 +4,52 @@ namespace App\Services\Generation;
 
 class LaravelProjectGenerator
 {
+    private const ROOT_FILES = [
+        '.editorconfig',
+        '.gitattributes',
+        '.gitignore',
+        '.npmrc',
+        'artisan',
+        'package.json',
+        'postcss.config.js',
+        'tailwind.config.js',
+        'vite.config.js',
+    ];
+
+    private const CONFIG_FILES = [
+        'app.php',
+        'auth.php',
+        'cache.php',
+        'database.php',
+        'filesystems.php',
+        'logging.php',
+        'mail.php',
+        'queue.php',
+        'services.php',
+        'session.php',
+    ];
+
     public function generate(array $specification, string $outputDir): void
     {
         $this->ensureCleanDirectory($outputDir);
 
         $appName = $specification['app'];
 
+        $this->writeBaseProject($outputDir, $appName);
         $this->write($outputDir.'/README.md', $this->readme($appName, $specification['entities']));
         $this->write($outputDir.'/routes/web.php', $this->routes($specification['entities']));
+        $this->write($outputDir.'/routes/auth.php', $this->authRoutes());
         $this->write($outputDir.'/resources/views/layouts/app.blade.php', $this->layout($appName, $specification['entities']));
+        $this->write($outputDir.'/resources/views/layouts/auth.blade.php', $this->authLayout($appName));
+        $this->write($outputDir.'/resources/views/dashboard.blade.php', $this->dashboardView($appName, $specification['entities']));
+        $this->write($outputDir.'/resources/views/auth/login.blade.php', $this->loginView());
+        $this->write($outputDir.'/resources/views/auth/register.blade.php', $this->registerView());
+        $this->write($outputDir.'/app/Http/Controllers/Auth/AuthenticatedSessionController.php', $this->authenticatedSessionController());
+        $this->write($outputDir.'/app/Http/Controllers/Auth/RegisteredUserController.php', $this->registeredUserController());
+        $this->write($outputDir.'/app/Http/Requests/Auth/LoginRequest.php', $this->loginRequest());
+        $this->write($outputDir.'/tests/TestCase.php', $this->testCase());
+        $this->write($outputDir.'/tests/Feature/ExampleTest.php', $this->featureExampleTest());
+        $this->write($outputDir.'/tests/Unit/ExampleTest.php', $this->unitExampleTest());
 
         $migrationEntities = $this->sortEntitiesForMigrations($specification['entities']);
 
@@ -28,6 +65,288 @@ class LaravelProjectGenerator
                 $this->migration($entity),
             );
         }
+    }
+
+    private function writeBaseProject(string $outputDir, string $appName): void
+    {
+        foreach (self::ROOT_FILES as $file) {
+            $this->copyBaseFile($file, $outputDir.'/'.$file);
+        }
+
+        $this->write($outputDir.'/composer.json', $this->composerJson($appName));
+        $this->write($outputDir.'/.env.example', $this->envExample($appName));
+        $this->write($outputDir.'/phpunit.xml', $this->phpunitXml());
+
+        $this->copyBaseFile('bootstrap/app.php', $outputDir.'/bootstrap/app.php');
+        $this->copyBaseFile('bootstrap/providers.php', $outputDir.'/bootstrap/providers.php');
+        $this->write($outputDir.'/bootstrap/cache/.gitignore', "*\n!.gitignore\n");
+
+        foreach (self::CONFIG_FILES as $file) {
+            $this->copyBaseFile('config/'.$file, $outputDir.'/config/'.$file);
+        }
+
+        foreach ([
+            'app/Http/Controllers/Controller.php',
+            'app/Models/User.php',
+            'app/Providers/AppServiceProvider.php',
+            'database/factories/UserFactory.php',
+            'database/seeders/DatabaseSeeder.php',
+            'public/.htaccess',
+            'public/favicon.ico',
+            'public/index.php',
+            'public/robots.txt',
+            'resources/css/app.css',
+            'resources/js/app.js',
+            'routes/console.php',
+        ] as $file) {
+            $this->copyBaseFile($file, $outputDir.'/'.$file);
+        }
+
+        foreach (glob(base_path('database/migrations/0001_*.php')) ?: [] as $migration) {
+            $this->copyBaseFile(
+                'database/migrations/'.basename($migration),
+                $outputDir.'/database/migrations/'.basename($migration),
+            );
+        }
+
+        foreach ([
+            'database/.gitignore',
+            'storage/app/.gitignore',
+            'storage/app/private/.gitignore',
+            'storage/app/public/.gitignore',
+            'storage/framework/.gitignore',
+            'storage/framework/cache/.gitignore',
+            'storage/framework/cache/data/.gitignore',
+            'storage/framework/sessions/.gitignore',
+            'storage/framework/testing/.gitignore',
+            'storage/framework/views/.gitignore',
+            'storage/logs/.gitignore',
+        ] as $file) {
+            $this->copyBaseFile($file, $outputDir.'/'.$file);
+        }
+    }
+
+    private function copyBaseFile(string $source, string $target): void
+    {
+        $sourcePath = base_path($source);
+        if (!is_file($sourcePath)) {
+            return;
+        }
+
+        $dir = dirname($target);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        copy($sourcePath, $target);
+    }
+
+    private function composerJson(string $appName): string
+    {
+        $packageName = strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $appName));
+        $packageName = trim($packageName, '-') ?: 'generated-laravel-app';
+
+        $composer = [
+            '$schema' => 'https://getcomposer.org/schema.json',
+            'name' => 'generated/'.$packageName,
+            'type' => 'project',
+            'description' => 'Generated Laravel application.',
+            'license' => 'MIT',
+            'require' => [
+                'php' => '^8.4',
+                'laravel/framework' => '^13.8',
+                'laravel/tinker' => '^3.0',
+            ],
+            'require-dev' => [
+                'fakerphp/faker' => '^1.23',
+                'laravel/breeze' => '^2.4',
+                'laravel/pail' => '^1.2.5',
+                'laravel/pint' => '^1.27',
+                'mockery/mockery' => '^1.6',
+                'nunomaduro/collision' => '^8.6',
+                'phpunit/phpunit' => '^12.5.12',
+            ],
+            'autoload' => [
+                'psr-4' => [
+                    'App\\' => 'app/',
+                    'Database\\Factories\\' => 'database/factories/',
+                    'Database\\Seeders\\' => 'database/seeders/',
+                ],
+            ],
+            'autoload-dev' => [
+                'psr-4' => [
+                    'Tests\\' => 'tests/',
+                ],
+            ],
+            'scripts' => [
+                'setup' => [
+                    'composer install',
+                    '@php -r "file_exists(\'.env\') || copy(\'.env.example\', \'.env\');"',
+                    '@php artisan key:generate',
+                    '@php -r "is_dir(\'database\') || mkdir(\'database\', 0775, true);"',
+                    '@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"',
+                    '@php artisan migrate --force',
+                    'npm install',
+                    'npm run build',
+                ],
+                'dev' => [
+                    'Composer\\Config::disableProcessTimeout',
+                    'npx concurrently -c "#93c5fd,#c4b5fd,#fb7185,#fdba74" "php artisan serve" "npm run dev" --names=server,vite --kill-others',
+                ],
+                'test' => [
+                    '@php artisan config:clear --ansi',
+                    '@php artisan test',
+                ],
+                'post-autoload-dump' => [
+                    'Illuminate\\Foundation\\ComposerScripts::postAutoloadDump',
+                    '@php artisan package:discover --ansi',
+                ],
+                'post-update-cmd' => [
+                    '@php artisan vendor:publish --tag=laravel-assets --ansi --force',
+                ],
+                'post-root-package-install' => [
+                    '@php -r "file_exists(\'.env\') || copy(\'.env.example\', \'.env\');"',
+                ],
+                'post-create-project-cmd' => [
+                    '@php artisan key:generate --ansi',
+                    '@php -r "file_exists(\'database/database.sqlite\') || touch(\'database/database.sqlite\');"',
+                    '@php artisan migrate --graceful --ansi',
+                ],
+            ],
+            'extra' => [
+                'laravel' => [
+                    'dont-discover' => [],
+                ],
+            ],
+            'config' => [
+                'optimize-autoloader' => true,
+                'preferred-install' => 'dist',
+                'sort-packages' => true,
+            ],
+            'minimum-stability' => 'stable',
+            'prefer-stable' => true,
+        ];
+
+        return json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    private function envExample(string $appName): string
+    {
+        $quotedAppName = str_contains($appName, ' ')
+            ? '"'.addcslashes($appName, "\"\\").'"'
+            : $appName;
+
+        return <<<ENV
+APP_NAME={$quotedAppName}
+APP_ENV=local
+APP_KEY=
+APP_DEBUG=true
+APP_URL=http://localhost
+
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+APP_FAKER_LOCALE=en_US
+
+APP_MAINTENANCE_DRIVER=file
+
+BCRYPT_ROUNDS=12
+
+LOG_CHANNEL=stack
+LOG_STACK=single
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=debug
+
+DB_CONNECTION=sqlite
+# DB_HOST=127.0.0.1
+# DB_PORT=3306
+# DB_DATABASE=laravel
+# DB_USERNAME=root
+# DB_PASSWORD=
+
+SESSION_DRIVER=database
+SESSION_LIFETIME=120
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=null
+
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=database
+
+CACHE_STORE=database
+
+MEMCACHED_HOST=127.0.0.1
+
+REDIS_CLIENT=phpredis
+REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+MAIL_MAILER=log
+MAIL_SCHEME=null
+MAIL_HOST=127.0.0.1
+MAIL_PORT=2525
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_FROM_ADDRESS="hello@example.com"
+MAIL_FROM_NAME="\${APP_NAME}"
+
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_DEFAULT_REGION=us-east-1
+AWS_BUCKET=
+AWS_USE_PATH_STYLE_ENDPOINT=false
+
+VITE_APP_NAME="\${APP_NAME}"
+
+ENV;
+    }
+
+    private function phpunitXml(): string
+    {
+        return <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <server name="APP_ENV" value="testing"/>
+        <server name="APP_KEY" value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="/>
+        <server name="BCRYPT_ROUNDS" value="4"/>
+        <server name="CACHE_STORE" value="array"/>
+        <server name="DB_CONNECTION" value="sqlite"/>
+        <server name="DB_DATABASE" value=":memory:"/>
+        <server name="MAIL_MAILER" value="array"/>
+        <server name="QUEUE_CONNECTION" value="sync"/>
+        <server name="SESSION_DRIVER" value="array"/>
+    </php>
+</phpunit>
+
+XML;
+    }
+
+    private function indent(string $content, int $spaces): string
+    {
+        $prefix = str_repeat(' ', $spaces);
+
+        return collect(explode("\n", $content))
+            ->map(fn (string $line) => $line === '' ? $line : $prefix.$line)
+            ->implode("\n");
     }
 
     private function ensureCleanDirectory(string $dir): void
@@ -66,26 +385,82 @@ class LaravelProjectGenerator
                     ->map(fn (array $relation) => $relation['type'].' '.$relation['target'])
                     ->implode(', ');
 
-                return '- '.$entity['name'].' (`'.$entity['table'].'`)'.($relations ? ' - relacije: '.$relations : '');
+                return '- '.$entity['name'].' (`'.$entity['table'].'`)'.($relations ? ' - relations: '.$relations : '');
             })
             ->implode("\n");
 
         return <<<MD
 # {$appName}
 
-Ovaj Laravel kod je generisan na osnovu DSL specifikacije.
+This is a complete Laravel application generated from a DSL specification. It includes a Laravel application skeleton, basic authentication, database migrations, Eloquent models, resource controllers, web routes, and Blade CRUD views.
 
-## Generisani entiteti
+## Generated Entities
 
 {$list}
 
-## Sadržaj
+## Requirements
 
-- Eloquent modeli
-- Resource kontroleri
-- Migracije
-- Web rute
-- Blade prikazi za CRUD operacije
+- PHP 8.4 or newer
+- Composer
+- Node.js and npm
+- SQLite, MySQL, or another database supported by Laravel
+
+## Setup
+
+1. Install PHP dependencies:
+
+```bash
+composer install
+```
+
+2. Install JavaScript dependencies:
+
+```bash
+npm install
+```
+
+3. Create the environment file and application key:
+
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+
+4. Create the default SQLite database file:
+
+```bash
+touch database/database.sqlite
+```
+
+If you want to use MySQL or PostgreSQL, update the `DB_*` values in `.env` before running migrations.
+
+5. Run database migrations:
+
+```bash
+php artisan migrate
+```
+
+6. Start the Laravel server:
+
+```bash
+php artisan serve
+```
+
+7. In a second terminal, start Vite:
+
+```bash
+npm run dev
+```
+
+Open `http://127.0.0.1:8000`, register a user, then use the generated CRUD screens from the dashboard.
+
+## Production Build
+
+```bash
+npm run build
+php artisan config:cache
+php artisan route:cache
+```
 
 MD;
     }
@@ -109,10 +484,50 @@ use Illuminate\Support\Facades\Route;
 {$controllers}
 
 Route::get('/', function () {
-    return redirect()->route('{$firstRoute}.index');
+    return redirect()->route('dashboard');
 });
 
-{$resourceRoutes}
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware('auth')->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+{$this->indent($resourceRoutes, 4)}
+    Route::get('/generated', function () {
+        return redirect()->route('{$firstRoute}.index');
+    })->name('generated.index');
+});
+
+require __DIR__.'/auth.php';
+
+PHP;
+    }
+
+    private function authRoutes(): string
+    {
+        return <<<'PHP'
+<?php
+
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use Illuminate\Support\Facades\Route;
+
+Route::middleware('guest')->group(function () {
+    Route::get('register', [RegisteredUserController::class, 'create'])
+        ->name('register');
+
+    Route::post('register', [RegisteredUserController::class, 'store']);
+
+    Route::get('login', [AuthenticatedSessionController::class, 'create'])
+        ->name('login');
+
+    Route::post('login', [AuthenticatedSessionController::class, 'store']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
+        ->name('logout');
+});
 
 PHP;
     }
@@ -602,23 +1017,25 @@ BLADE;
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{$appName}</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
-        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09090b; color: #f4f4f5; }
-        body { margin: 0; background: linear-gradient(135deg, #09090b, #111827); min-height: 100vh; }
+        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b0f14; color: #f4f4f5; }
+        body { margin: 0; background: #0b0f14; min-height: 100vh; }
         a { color: inherit; }
         .shell { max-width: 1120px; margin: 0 auto; padding: 24px; }
         .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0 28px; }
         .brand { font-weight: 800; font-size: 18px; }
         .nav { display: flex; flex-wrap: wrap; gap: 8px; }
-        .nav a, .button { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 9px 13px; text-decoration: none; background: rgba(255,255,255,.05); font-weight: 700; font-size: 14px; }
+        .nav a, .button { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 9px 13px; text-decoration: none; background: rgba(255,255,255,.05); color: #f4f4f5; font-weight: 700; font-size: 14px; cursor: pointer; }
         .button.primary { background: #6ee7b7; color: #052e2b; border-color: #6ee7b7; }
         .button.danger { background: rgba(248,113,113,.16); color: #fecaca; border-color: rgba(248,113,113,.35); }
         .page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
         .eyebrow { margin: 0 0 6px; color: #a1a1aa; font-size: 12px; font-weight: 800; text-transform: uppercase; }
         h1 { margin: 0; font-size: 32px; line-height: 1.1; }
         h2 { margin-top: 0; }
-        .card { border: 1px solid rgba(255,255,255,.10); border-radius: 10px; background: rgba(255,255,255,.055); box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+        .card { border: 1px solid rgba(255,255,255,.10); border-radius: 8px; background: rgba(255,255,255,.055); box-shadow: 0 24px 80px rgba(0,0,0,.25); }
         .table-card { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
@@ -634,23 +1051,422 @@ BLADE;
         .detail-list dt { color: #a1a1aa; font-weight: 800; }
         .related-card { padding: 18px; margin-bottom: 18px; }
         .pagination { margin-top: 16px; color: #d4d4d8; }
+        .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .muted { color: #a1a1aa; }
+        form.inline { margin: 0; }
     </style>
 </head>
 <body>
     <div class="shell">
         <header class="topbar">
-            <div class="brand">{$appName}</div>
-            <nav class="nav">
-            {$nav}
-            </nav>
+            <a class="brand" href="{{ route('dashboard') }}">{$appName}</a>
+            <div class="top-actions">
+                @auth
+                    <nav class="nav">
+                    {$nav}
+                    </nav>
+                    <span class="muted">{{ auth()->user()->name }}</span>
+                    <form class="inline" method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button class="button" type="submit">Log out</button>
+                    </form>
+                @else
+                    <a class="button" href="{{ route('login') }}">Log in</a>
+                    <a class="button primary" href="{{ route('register') }}">Register</a>
+                @endauth
+            </div>
         </header>
 
-        @yield('content')
+        @hasSection('content')
+            @yield('content')
+        @else
+            {{ \$slot ?? '' }}
+        @endif
     </div>
 </body>
 </html>
 
 BLADE;
+    }
+
+    private function authLayout(string $appName): string
+    {
+        return <<<BLADE
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{$appName}</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <style>
+        :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b0f14; color: #f4f4f5; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0f14; padding: 24px; }
+        a { color: #6ee7b7; }
+        .auth-card { width: min(100%, 440px); border: 1px solid rgba(255,255,255,.10); border-radius: 8px; background: rgba(255,255,255,.055); padding: 28px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+        .brand { display: inline-block; margin-bottom: 22px; color: #f4f4f5; font-weight: 800; text-decoration: none; }
+        h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.1; }
+        p { margin: 0 0 22px; color: #a1a1aa; }
+        form { display: grid; gap: 16px; }
+        label { display: grid; gap: 7px; color: #d4d4d8; font-weight: 700; }
+        input { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(0,0,0,.35); color: #f4f4f5; padding: 11px 12px; }
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .button { border: 1px solid #6ee7b7; border-radius: 8px; padding: 10px 14px; background: #6ee7b7; color: #052e2b; font-weight: 800; cursor: pointer; }
+        .error { color: #fca5a5; font-size: 13px; }
+        .status { color: #86efac; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <main class="auth-card">
+        <a class="brand" href="{{ url('/') }}">{$appName}</a>
+        @yield('content')
+    </main>
+</body>
+</html>
+
+BLADE;
+    }
+
+    private function dashboardView(string $appName, array $entities): string
+    {
+        $links = collect($entities)
+            ->map(fn (array $entity) => "        <a class=\"button primary\" href=\"{{ route('{$entity['route']}.index') }}\">Open {$entity['name']}</a>")
+            ->implode("\n");
+
+        return <<<BLADE
+@extends('layouts.app')
+
+@section('content')
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Dashboard</p>
+            <h1>{$appName}</h1>
+        </div>
+    </div>
+
+    <section class="card related-card">
+        <h2>Generated CRUD</h2>
+        <p class="muted">Choose a resource to manage records.</p>
+        <div class="actions-row">
+{$links}
+        </div>
+    </section>
+@endsection
+
+BLADE;
+    }
+
+    private function loginView(): string
+    {
+        return <<<'BLADE'
+@extends('layouts.auth')
+
+@section('content')
+    <h1>Log in</h1>
+    <p>Access the generated Laravel application.</p>
+
+    @if (session('status'))
+        <div class="status">{{ session('status') }}</div>
+    @endif
+
+    <form method="POST" action="{{ route('login') }}">
+        @csrf
+
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="username">
+        </label>
+        @error('email') <div class="error">{{ $message }}</div> @enderror
+
+        <label>
+            <span>Password</span>
+            <input type="password" name="password" required autocomplete="current-password">
+        </label>
+        @error('password') <div class="error">{{ $message }}</div> @enderror
+
+        <label>
+            <span>
+                <input type="checkbox" name="remember">
+                Remember me
+            </span>
+        </label>
+
+        <div class="row">
+            <a href="{{ route('register') }}">Create an account</a>
+            <button class="button" type="submit">Log in</button>
+        </div>
+    </form>
+@endsection
+
+BLADE;
+    }
+
+    private function registerView(): string
+    {
+        return <<<'BLADE'
+@extends('layouts.auth')
+
+@section('content')
+    <h1>Register</h1>
+    <p>Create the first user for this generated application.</p>
+
+    <form method="POST" action="{{ route('register') }}">
+        @csrf
+
+        <label>
+            <span>Name</span>
+            <input type="text" name="name" value="{{ old('name') }}" required autofocus autocomplete="name">
+        </label>
+        @error('name') <div class="error">{{ $message }}</div> @enderror
+
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="{{ old('email') }}" required autocomplete="username">
+        </label>
+        @error('email') <div class="error">{{ $message }}</div> @enderror
+
+        <label>
+            <span>Password</span>
+            <input type="password" name="password" required autocomplete="new-password">
+        </label>
+        @error('password') <div class="error">{{ $message }}</div> @enderror
+
+        <label>
+            <span>Confirm password</span>
+            <input type="password" name="password_confirmation" required autocomplete="new-password">
+        </label>
+
+        <div class="row">
+            <a href="{{ route('login') }}">Already registered?</a>
+            <button class="button" type="submit">Register</button>
+        </div>
+    </form>
+@endsection
+
+BLADE;
+    }
+
+    private function authenticatedSessionController(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
+
+class AuthenticatedSessionController extends Controller
+{
+    public function create(): View
+    {
+        return view('auth.login');
+    }
+
+    public function store(LoginRequest $request): RedirectResponse
+    {
+        $request->authenticate();
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    public function destroy(Request $request): RedirectResponse
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/');
+    }
+}
+
+PHP;
+    }
+
+    private function registeredUserController(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules;
+use Illuminate\View\View;
+
+class RegisteredUserController extends Controller
+{
+    public function create(): View
+    {
+        return view('auth.register');
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ]);
+
+        $user = User::query()->create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        event(new Registered($user));
+
+        Auth::login($user);
+
+        return redirect(route('dashboard', absolute: false));
+    }
+}
+
+PHP;
+    }
+
+    private function loginRequest(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace App\Http\Requests\Auth;
+
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+class LoginRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+        ];
+    }
+
+    public function authenticate(): void
+    {
+        $this->ensureIsNotRateLimited();
+
+        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => trans('auth.failed'),
+            ]);
+        }
+
+        RateLimiter::clear($this->throttleKey());
+    }
+
+    public function ensureIsNotRateLimited(): void
+    {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+            return;
+        }
+
+        event(new Lockout($this));
+
+        $seconds = RateLimiter::availableIn($this->throttleKey());
+
+        throw ValidationException::withMessages([
+            'email' => trans('auth.throttle', [
+                'seconds' => $seconds,
+                'minutes' => ceil($seconds / 60),
+            ]),
+        ]);
+    }
+
+    public function throttleKey(): string
+    {
+        return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+    }
+}
+
+PHP;
+    }
+
+    private function testCase(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace Tests;
+
+use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+
+abstract class TestCase extends BaseTestCase
+{
+    //
+}
+
+PHP;
+    }
+
+    private function featureExampleTest(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace Tests\Feature;
+
+use Tests\TestCase;
+
+class ExampleTest extends TestCase
+{
+    public function test_home_redirects_to_dashboard(): void
+    {
+        $this->get('/')
+            ->assertRedirect(route('dashboard'));
+    }
+}
+
+PHP;
+    }
+
+    private function unitExampleTest(): string
+    {
+        return <<<'PHP'
+<?php
+
+namespace Tests\Unit;
+
+use PHPUnit\Framework\TestCase;
+
+class ExampleTest extends TestCase
+{
+    public function test_that_true_is_true(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+
+PHP;
     }
 
     private function migrationFileName(int $index, array $entity): string
