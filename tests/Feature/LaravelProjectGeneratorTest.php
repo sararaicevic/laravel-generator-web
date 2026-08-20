@@ -192,6 +192,94 @@ class LaravelProjectGeneratorTest extends TestCase
         $this->assertStringContainsString("\$account->password ? 'Set' : '-'", $showView);
     }
 
+    public function test_it_extends_the_default_laravel_users_table_for_user_entities(): void
+    {
+        (new LaravelProjectGenerator())->generate([
+            'app' => 'ShopDemo',
+            'entities' => [
+                [
+                    'name' => 'User',
+                    'table' => 'users',
+                    'route' => 'users',
+                    'variable' => 'user',
+                    'collection' => 'users',
+                    'fields' => [
+                        [
+                            'name' => 'username',
+                            'label' => 'Username',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => true,
+                        ],
+                        [
+                            'name' => 'email',
+                            'label' => 'Email',
+                            'type' => 'email',
+                            'required' => true,
+                            'unique' => true,
+                        ],
+                        [
+                            'name' => 'password',
+                            'label' => 'Password',
+                            'type' => 'password',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                        [
+                            'name' => 'role',
+                            'label' => 'Role',
+                            'type' => 'string',
+                            'required' => false,
+                            'unique' => false,
+                        ],
+                        [
+                            'name' => 'id',
+                            'label' => 'Id',
+                            'type' => 'string',
+                            'required' => true,
+                            'unique' => false,
+                        ],
+                    ],
+                    'relations' => [],
+                ],
+            ],
+        ], $this->outputDir);
+
+        $createUserMigrations = array_values(array_filter(
+            glob($this->outputDir.'/database/migrations/*_create_users_table.php') ?: [],
+            fn (string $path): bool => basename($path) !== '0001_01_01_000000_create_users_table.php',
+        ));
+
+        $this->assertSame([], $createUserMigrations);
+        $this->assertFileExists($this->outputDir.'/database/migrations/0001_01_01_000000_create_users_table.php');
+
+        $updateUserMigration = File::get(glob($this->outputDir.'/database/migrations/*_update_users_table.php')[0]);
+        $this->assertStringContainsString("Schema::table('users'", $updateUserMigration);
+        $this->assertStringContainsString("\$table->string('username')->unique();", $updateUserMigration);
+        $this->assertStringContainsString("\$table->string('role')->nullable();", $updateUserMigration);
+        $this->assertStringNotContainsString("\$table->id();", $updateUserMigration);
+        $this->assertStringNotContainsString("\$table->string('email'", $updateUserMigration);
+        $this->assertStringNotContainsString("\$table->string('password'", $updateUserMigration);
+
+        $userModel = File::get($this->outputDir.'/app/Models/User.php');
+        $this->assertStringContainsString('class User extends Authenticatable', $userModel);
+        $this->assertStringContainsString("#[Fillable(['name', 'email', 'password', 'username', 'role'])]", $userModel);
+        $this->assertStringContainsString("'password' => 'hashed'", $userModel);
+
+        $registerView = File::get($this->outputDir.'/resources/views/auth/register.blade.php');
+        $this->assertStringContainsString('name="username"', $registerView);
+        $this->assertStringContainsString('name="role"', $registerView);
+
+        $registeredController = File::get($this->outputDir.'/app/Http/Controllers/Auth/RegisteredUserController.php');
+        $this->assertStringContainsString("'username' => 'required|string|unique:users,username'", $registeredController);
+        $this->assertStringContainsString("'role' => 'nullable|string'", $registeredController);
+        $this->assertStringContainsString("'username' => \$validated['username'] ?? null", $registeredController);
+
+        $userSeeder = File::get($this->outputDir.'/database/seeders/UserSeeder.php');
+        $this->assertStringContainsString("'username' => 'testuser'", $userSeeder);
+        $this->assertStringContainsString("'role' => 'Sample Role'", $userSeeder);
+    }
+
     public function test_it_generates_custom_pivot_table_for_many_to_many_relationships(): void
     {
         (new LaravelProjectGenerator())->generate($this->customPivotSpecification(), $this->outputDir);

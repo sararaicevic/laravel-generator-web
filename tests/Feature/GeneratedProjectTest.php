@@ -7,9 +7,12 @@ use App\Models\GeneratedEntity;
 use App\Models\GeneratedProject;
 use App\Models\GeneratedRelation;
 use App\Models\User;
+use App\Services\Dsl\DslParser;
+use App\Services\Generation\LaravelProjectGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
+use ZipArchive;
 
 class GeneratedProjectTest extends TestCase
 {
@@ -233,6 +236,56 @@ DSL);
         $this->assertNull($project->zip_path);
 
         Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
+    }
+
+    public function test_generation_zip_contains_only_project_files_from_out_directory(): void
+    {
+        $user = $this->createUser();
+        $project = GeneratedProject::query()->create([
+            'user_id' => $user->id,
+            'uuid' => '77777777-7777-7777-7777-777777777777',
+            'name' => 'Shop Demo',
+            'status' => 'queued',
+        ]);
+
+        $inputDir = storage_path('app/generator/'.$project->uuid.'/input');
+        if (!is_dir($inputDir)) {
+            mkdir($inputDir, 0775, true);
+        }
+
+        file_put_contents($inputDir.'/model.mydsl', <<<'DSL'
+app ShopDemo {
+  entity Product {
+    name: string required
+  }
+}
+DSL);
+
+        (new GenerateLaravelProject($project->id))->handle(
+            app(DslParser::class),
+            app(LaravelProjectGenerator::class),
+        );
+
+        $project->refresh();
+
+        $this->assertSame('succeeded', $project->status);
+        $this->assertSame('generator/'.$project->uuid.'/out', $project->output_path);
+        $this->assertSame('generator/'.$project->uuid.'/shop-demo.zip', $project->zip_path);
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open(storage_path('app/'.$project->zip_path)));
+
+        $entries = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entries[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+
+        $this->assertContains('artisan', $entries);
+        $this->assertContains('app/Models/Product.php', $entries);
+        $this->assertContains('database/migrations/0001_01_01_000000_create_users_table.php', $entries);
+        $this->assertFalse(collect($entries)->contains(fn (string $entry): bool => str_starts_with($entry, 'home/')));
+        $this->assertFalse(collect($entries)->contains(fn (string $entry): bool => str_contains($entry, '/storage/app/generator/')));
     }
 
     public function test_authenticated_user_can_download_project_with_absolute_zip_path(): void

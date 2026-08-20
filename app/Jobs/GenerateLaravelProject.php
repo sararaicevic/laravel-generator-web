@@ -11,6 +11,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
 use ZipArchive;
 
 class GenerateLaravelProject implements ShouldQueue
@@ -45,7 +46,7 @@ class GenerateLaravelProject implements ShouldQueue
         $workDir = storage_path('app/generator/'.$project->uuid);
         $inputPath = $workDir.'/input/model.mydsl';
         $outDir = $workDir.'/out';
-        $zipPath = $workDir.'/project.zip';
+        $zipPath = $workDir.'/'.(Str::slug($project->name) ?: 'generated-app').'.zip';
 
         @mkdir($workDir.'/input', 0775, true);
 
@@ -101,7 +102,8 @@ class GenerateLaravelProject implements ShouldQueue
 
     private function zipDirectory(string $dir, string $zipPath): bool
     {
-        if (!is_dir($dir)) {
+        $root = realpath($dir);
+        if ($root === false || !is_dir($root)) {
             return false;
         }
 
@@ -112,9 +114,9 @@ class GenerateLaravelProject implements ShouldQueue
             return false;
         }
 
-        $dir = rtrim($dir, DIRECTORY_SEPARATOR);
+        $root = rtrim($root, DIRECTORY_SEPARATOR);
         $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST,
         );
 
@@ -125,7 +127,11 @@ class GenerateLaravelProject implements ShouldQueue
                 continue;
             }
 
-            $rel = ltrim(str_replace($dir, '', $filePath), DIRECTORY_SEPARATOR);
+            if (!str_starts_with($filePath, $root.DIRECTORY_SEPARATOR)) {
+                continue;
+            }
+
+            $rel = substr($filePath, strlen($root) + 1);
             if ($file->isDir()) {
                 $zip->addEmptyDir($rel);
             } else {

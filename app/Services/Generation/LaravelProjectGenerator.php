@@ -38,6 +38,31 @@ class LaravelProjectGenerator
         'delete',
     ];
 
+    private const MANAGED_COLUMNS = [
+        'id',
+        'created_at',
+        'updated_at',
+    ];
+
+    private const AUTH_USER_COLUMNS = [
+        'id',
+        'name',
+        'email',
+        'email_verified_at',
+        'password',
+        'remember_token',
+        'created_at',
+        'updated_at',
+    ];
+
+    private const AUTH_USER_NON_FILLABLE_COLUMNS = [
+        'id',
+        'email_verified_at',
+        'remember_token',
+        'created_at',
+        'updated_at',
+    ];
+
     public function generate(array $specification, string $outputDir): void
     {
         $this->ensureCleanDirectory($outputDir);
@@ -45,9 +70,12 @@ class LaravelProjectGenerator
         $appName = $specification['app'];
         $entities = collect($specification['entities'])
             ->map(fn (array $entity) => $this->withDefaultFeatures($entity))
+            ->map(fn (array $entity) => $this->withoutManagedFields($entity))
             ->all();
+        $authUserEntity = collect($entities)
+            ->first(fn (array $entity): bool => $this->isAuthUserEntity($entity));
 
-        $this->writeBaseProject($outputDir, $appName);
+        $this->writeBaseProject($outputDir, $appName, $authUserEntity);
         $this->write($outputDir.'/README.md', $this->readme($appName, $entities));
         $this->write($outputDir.'/routes/web.php', $this->routes($entities));
         $this->write($outputDir.'/routes/auth.php', $this->authRoutes());
@@ -56,25 +84,40 @@ class LaravelProjectGenerator
         $this->writeUiComponents($outputDir);
         $this->write($outputDir.'/resources/views/dashboard.blade.php', $this->dashboardView($appName, $entities));
         $this->write($outputDir.'/resources/views/auth/login.blade.php', $this->loginView());
-        $this->write($outputDir.'/resources/views/auth/register.blade.php', $this->registerView());
+        $this->write($outputDir.'/resources/views/auth/register.blade.php', $this->registerView($authUserEntity));
         $this->write($outputDir.'/app/Http/Controllers/Auth/AuthenticatedSessionController.php', $this->authenticatedSessionController());
-        $this->write($outputDir.'/app/Http/Controllers/Auth/RegisteredUserController.php', $this->registeredUserController());
+        $this->write($outputDir.'/app/Http/Controllers/Auth/RegisteredUserController.php', $this->registeredUserController($authUserEntity));
         $this->write($outputDir.'/app/Http/Requests/Auth/LoginRequest.php', $this->loginRequest());
         $this->write($outputDir.'/tests/TestCase.php', $this->testCase());
         $this->write($outputDir.'/tests/Feature/ExampleTest.php', $this->featureExampleTest());
         $this->write($outputDir.'/tests/Unit/ExampleTest.php', $this->unitExampleTest());
 
         foreach ($entities as $entity) {
-            $this->write($outputDir.'/app/Models/'.$entity['name'].'.php', $this->model($entity));
+            $this->write(
+                $outputDir.'/app/Models/'.$entity['name'].'.php',
+                $this->isAuthUserEntity($entity) ? $this->authUserModel($entity) : $this->model($entity),
+            );
             $this->write($outputDir.'/app/Http/Controllers/'.$entity['name'].'Controller.php', $this->controller($entity));
             $this->writeViews($outputDir, $entity);
         }
 
-        foreach ($entities as $index => $entity) {
+        $entityMigrationCount = 0;
+
+        foreach ($entities as $entity) {
+            $migration = $this->isAuthUserEntity($entity)
+                ? $this->authUserMigration($entity)
+                : $this->migration($entity);
+
+            if ($migration === null) {
+                continue;
+            }
+
             $this->write(
-                $outputDir.'/database/migrations/'.$this->migrationFileName($index, $entity).'.php',
-                $this->migration($entity),
+                $outputDir.'/database/migrations/'.$this->migrationFileName($entityMigrationCount, $entity).'.php',
+                $migration,
             );
+
+            $entityMigrationCount++;
         }
 
         $foreignKeyEntities = collect($entities)
@@ -84,12 +127,12 @@ class LaravelProjectGenerator
 
         foreach ($foreignKeyEntities as $index => $entity) {
             $this->write(
-                $outputDir.'/database/migrations/'.$this->foreignKeysMigrationFileName(count($entities) + $index, $entity).'.php',
+                $outputDir.'/database/migrations/'.$this->foreignKeysMigrationFileName($entityMigrationCount + $index, $entity).'.php',
                 $this->foreignKeysMigration($entity),
             );
         }
 
-        $pivotOffset = count($entities) + count($foreignKeyEntities);
+        $pivotOffset = $entityMigrationCount + count($foreignKeyEntities);
 
         foreach ($this->belongsToManyPivotRelations($entities) as $index => $relation) {
             $this->write(
@@ -99,7 +142,7 @@ class LaravelProjectGenerator
         }
     }
 
-    private function writeBaseProject(string $outputDir, string $appName): void
+    private function writeBaseProject(string $outputDir, string $appName, ?array $authUserEntity): void
     {
         foreach (self::ROOT_FILES as $file) {
             $this->copyBaseFile($file, $outputDir.'/'.$file);
@@ -136,7 +179,7 @@ class LaravelProjectGenerator
         }
 
         $this->write($outputDir.'/database/seeders/DatabaseSeeder.php', $this->databaseSeeder());
-        $this->write($outputDir.'/database/seeders/UserSeeder.php', $this->userSeeder());
+        $this->write($outputDir.'/database/seeders/UserSeeder.php', $this->userSeeder($authUserEntity));
         $this->write($outputDir.'/resources/css/app.css', $this->generatedAppCss());
 
         foreach (glob(base_path('database/migrations/0001_*.php')) ?: [] as $migration) {
@@ -1011,9 +1054,14 @@ class DatabaseSeeder extends Seeder
 PHP;
     }
 
-    private function userSeeder(): string
+    private function userSeeder(?array $authUserEntity): string
     {
-        return <<<'PHP'
+        $extraAttributes = collect($this->authUserAdditionalFields($authUserEntity))
+            ->map(fn (array $field): string => "            '{$field['name']}' => ".$this->seederValue($field).',')
+            ->implode("\n");
+        $extraAttributes = $extraAttributes ? "\n{$extraAttributes}" : '';
+
+        return <<<PHP
 <?php
 
 namespace Database\Seeders;
@@ -1033,6 +1081,7 @@ class UserSeeder extends Seeder
             'email_verified_at' => now(),
             'password' => Hash::make('password'),
             'remember_token' => null,
+{$extraAttributes}
         ]);
     }
 }
@@ -1244,6 +1293,25 @@ PHP;
         return $entity;
     }
 
+    private function withoutManagedFields(array $entity): array
+    {
+        $entity['fields'] = collect($entity['fields'] ?? [])
+            ->reject(fn (array $field): bool => in_array($field['name'], self::MANAGED_COLUMNS, true))
+            ->values()
+            ->all();
+
+        if (($entity['display_field'] ?? null) && !collect($entity['fields'])->contains('name', $entity['display_field'])) {
+            $entity['display_field'] = null;
+        }
+
+        return $entity;
+    }
+
+    private function isAuthUserEntity(array $entity): bool
+    {
+        return ($entity['table'] ?? null) === 'users';
+    }
+
     private function entityFeature(array $entity, string $feature): bool
     {
         return (bool) ($entity['features'][$feature] ?? true);
@@ -1406,6 +1474,89 @@ class {$entity['name']} extends Model
 PHP;
     }
 
+    private function authUserModel(array $entity): string
+    {
+        $fillable = collect(['name', 'email', 'password'])
+            ->merge($this->fillableAttributes($entity))
+            ->reject(fn (string $attribute): bool => in_array($attribute, self::AUTH_USER_NON_FILLABLE_COLUMNS, true))
+            ->unique()
+            ->values()
+            ->map(fn (string $attribute) => "'{$attribute}'")
+            ->implode(', ');
+        $hidden = collect(['password', 'remember_token'])
+            ->merge($this->hiddenAttributes($entity))
+            ->unique()
+            ->values()
+            ->map(fn (string $attribute) => "'{$attribute}'")
+            ->implode(', ');
+        $casts = collect(array_merge([
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ], $this->fieldCasts($entity)))
+            ->map(fn (string $cast, string $attribute) => "            '{$attribute}' => '{$cast}',")
+            ->implode("\n");
+
+        $relations = collect($entity['relations'] ?? [])
+            ->map(fn (array $relation) => $this->modelRelationMethod($relation))
+            ->filter()
+            ->implode("\n");
+        $relationsBlock = $relations ? "\n{$relations}\n" : '';
+
+        $displayFields = collect($this->displayNameFields($entity))
+            ->map(fn (string $field) => "            '{$field}',")
+            ->implode("\n");
+        $displayNameMethod = $displayFields
+            ? <<<PHP
+    public function displayName(): string
+    {
+        foreach ([
+{$displayFields}
+        ] as \$displayField) {
+            if (filled(\$this->{\$displayField})) {
+                return (string) \$this->{\$displayField};
+            }
+        }
+
+        return (string) \$this->id;
+    }
+PHP
+            : <<<PHP
+    public function displayName(): string
+    {
+        return (string) \$this->id;
+    }
+PHP;
+
+        return <<<PHP
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+#[Fillable([{$fillable}])]
+#[Hidden([{$hidden}])]
+class User extends Authenticatable
+{
+    use Notifiable;
+{$relationsBlock}
+    protected function casts(): array
+    {
+        return [
+{$casts}
+        ];
+    }
+
+{$displayNameMethod}
+}
+
+PHP;
+    }
+
     private function fillableAttributes(array $entity): array
     {
         $foreignKeys = collect($this->belongsToRelations($entity))
@@ -1460,6 +1611,26 @@ PHP;
         return collect($entity['fields'])
             ->where('type', 'password')
             ->pluck('name')
+            ->all();
+    }
+
+    private function authUserAdditionalFields(?array $entity): array
+    {
+        if (!$entity) {
+            return [];
+        }
+
+        return collect($entity['fields'] ?? [])
+            ->reject(fn (array $field): bool => in_array($field['name'], self::AUTH_USER_COLUMNS, true))
+            ->values()
+            ->all();
+    }
+
+    private function authUserRegistrationFields(?array $entity): array
+    {
+        return collect($this->authUserAdditionalFields($entity))
+            ->reject(fn (array $field): bool => in_array($field['type'], ['file', 'image'], true))
+            ->values()
             ->all();
     }
 
@@ -1896,6 +2067,55 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('{$entity['table']}');
+    }
+};
+
+PHP;
+    }
+
+    private function authUserMigration(array $entity): ?string
+    {
+        $fieldColumns = collect($this->authUserAdditionalFields($entity))
+            ->map(fn (array $field) => '            '.$this->migrationColumn($field));
+        $relationColumns = collect($this->belongsToRelations($entity))
+            ->map(fn (array $relation) => '            '.$this->relationColumn($relation));
+        $columns = $fieldColumns
+            ->merge($relationColumns)
+            ->implode("\n");
+
+        if ($columns === '') {
+            return null;
+        }
+
+        $dropColumns = collect($this->authUserAdditionalFields($entity))
+            ->pluck('name')
+            ->merge(collect($this->belongsToRelations($entity))->pluck('foreign_key'))
+            ->unique()
+            ->values()
+            ->map(fn (string $column): string => "'{$column}'")
+            ->implode(', ');
+
+        return <<<PHP
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint \$table) {
+{$columns}
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('users', function (Blueprint \$table) {
+            \$table->dropColumn([{$dropColumns}]);
+        });
     }
 };
 
@@ -3084,9 +3304,14 @@ BLADE;
 BLADE;
     }
 
-    private function registerView(): string
+    private function registerView(?array $authUserEntity): string
     {
-        return <<<'BLADE'
+        $extraInputs = collect($this->authUserRegistrationFields($authUserEntity))
+            ->map(fn (array $field): string => $this->fieldInput($field, false, 'user'))
+            ->implode("\n\n");
+        $extraInputs = $extraInputs ? "\n\n{$extraInputs}" : '';
+
+        return <<<BLADE
 @extends('layouts.auth')
 
 @section('content')
@@ -3100,19 +3325,20 @@ BLADE;
             <span>Name</span>
             <input type="text" name="name" value="{{ old('name') }}" required autofocus autocomplete="name">
         </label>
-        @error('name') <div class="error">{{ $message }}</div> @enderror
+        @error('name') <div class="error">{{ \$message }}</div> @enderror
+{$extraInputs}
 
         <label>
             <span>Email</span>
             <input type="email" name="email" value="{{ old('email') }}" required autocomplete="username">
         </label>
-        @error('email') <div class="error">{{ $message }}</div> @enderror
+        @error('email') <div class="error">{{ \$message }}</div> @enderror
 
         <label>
             <span>Password</span>
             <input type="password" name="password" required autocomplete="new-password">
         </label>
-        @error('password') <div class="error">{{ $message }}</div> @enderror
+        @error('password') <div class="error">{{ \$message }}</div> @enderror
 
         <label>
             <span>Confirm password</span>
@@ -3173,9 +3399,26 @@ class AuthenticatedSessionController extends Controller
 PHP;
     }
 
-    private function registeredUserController(): string
+    private function registeredUserController(?array $authUserEntity): string
     {
-        return <<<'PHP'
+        $extraRules = collect($this->authUserRegistrationFields($authUserEntity))
+            ->map(function (array $field): string {
+                $rule = $field['required'] ? 'required' : 'nullable';
+                $rule .= '|'.$this->validationRule($field);
+                if ($this->isUniqueField($field)) {
+                    $rule .= '|unique:users,'.$field['name'];
+                }
+
+                return "            '{$field['name']}' => '{$rule}',";
+            })
+            ->implode("\n");
+        $extraRules = $extraRules ? "\n{$extraRules}" : '';
+        $extraAttributes = collect($this->authUserRegistrationFields($authUserEntity))
+            ->map(fn (array $field): string => "            '{$field['name']}' => \$validated['{$field['name']}'] ?? null,")
+            ->implode("\n");
+        $extraAttributes = $extraAttributes ? "\n{$extraAttributes}" : '';
+
+        return <<<PHP
 <?php
 
 namespace App\Http\Controllers\Auth;
@@ -3197,23 +3440,25 @@ class RegisteredUserController extends Controller
         return view('auth.register');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request \$request): RedirectResponse
     {
-        $validated = $request->validate([
+        \$validated = \$request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+{$extraRules}
         ]);
 
-        $user = User::query()->create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
+        \$user = User::query()->create([
+            'name' => \$validated['name'],
+            'email' => \$validated['email'],
+            'password' => Hash::make(\$validated['password']),
+{$extraAttributes}
         ]);
 
-        event(new Registered($user));
+        event(new Registered(\$user));
 
-        Auth::login($user);
+        Auth::login(\$user);
 
         return redirect(route('dashboard', absolute: false));
     }
@@ -3353,6 +3598,10 @@ PHP;
 
     private function migrationFileName(int $index, array $entity): string
     {
+        if ($this->isAuthUserEntity($entity)) {
+            return now()->addSeconds($index)->format('Y_m_d_His').'_update_users_table';
+        }
+
         return now()->addSeconds($index)->format('Y_m_d_His').'_create_'.$entity['table'].'_table';
     }
 
@@ -3484,6 +3733,29 @@ PHP;
         $length = (int) ($field['metadata']['maxLength'] ?? 255);
 
         return max(1, min(255, $length));
+    }
+
+    private function seederValue(array $field): string
+    {
+        if (array_key_exists('default', $field['metadata'] ?? [])) {
+            return var_export($field['metadata']['default'], true);
+        }
+
+        return match ($field['type']) {
+            'bigInteger', 'foreignId', 'integer' => '1',
+            'boolean' => 'true',
+            'date' => "now()->toDateString()",
+            'datetime', 'timestamp' => 'now()',
+            'decimal', 'float' => '1.00',
+            'email' => "'test-{$field['name']}@example.com'",
+            'enum' => var_export((string) (($field['metadata']['options'] ?? [])[0] ?? 'sample'), true),
+            'json' => '[]',
+            'password' => "Hash::make('password')",
+            'text' => var_export('Sample '.$field['label'], true),
+            'time' => "'09:00:00'",
+            'url' => "'https://example.com'",
+            default => var_export($field['name'] === 'username' ? 'testuser' : 'Sample '.$field['label'], true),
+        };
     }
 
     private function belongsToRelations(array $entity): array
