@@ -117,7 +117,7 @@ class GeneratedProjectController extends Controller
         return response()->json([
             'status' => $project->status,
             'error_message' => $project->error_message,
-            'download_url' => $project->status === 'succeeded' && $project->zip_path
+            'download_url' => $this->hasDownloadableArtifact($project)
                 ? route('generator.download', $project)
                 : null,
         ]);
@@ -127,7 +127,8 @@ class GeneratedProjectController extends Controller
     {
         $this->authorizeOwner($project);
 
-        if (!$project->dsl_path || !is_file(storage_path('app/'.$project->dsl_path))) {
+        $dslPath = $this->storedPath($project->dsl_path);
+        if (!$dslPath || !is_file($dslPath)) {
             return back()->withErrors([
                 'rerun' => 'Generation cannot be rerun because the DSL file is missing.',
             ]);
@@ -153,7 +154,7 @@ class GeneratedProjectController extends Controller
             abort(Response::HTTP_NOT_FOUND);
         }
 
-        $zipAbs = storage_path('app/'.$project->zip_path);
+        $zipAbs = $this->storedPath($project->zip_path);
         if (!is_file($zipAbs)) {
             abort(Response::HTTP_NOT_FOUND);
         }
@@ -161,6 +162,29 @@ class GeneratedProjectController extends Controller
         $fileName = Str::slug($project->name).'.zip';
 
         return response()->download($zipAbs, $fileName);
+    }
+
+    private function hasDownloadableArtifact(GeneratedProject $project): bool
+    {
+        if ($project->status !== 'succeeded' || !$project->zip_path) {
+            return false;
+        }
+
+        $zipPath = $this->storedPath($project->zip_path);
+        return $zipPath && is_file($zipPath);
+    }
+
+    private function storedPath(?string $path): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+
+        if (str_starts_with($path, DIRECTORY_SEPARATOR)) {
+            return $path;
+        }
+
+        return storage_path('app/'.$path);
     }
 
     private function authorizeOwner(GeneratedProject $project): void
@@ -311,7 +335,7 @@ class GeneratedProjectController extends Controller
 
     private function toStorageRelative(string $path): string
     {
-        $root = rtrim(storage_path('app'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+        $root = rtrim(realpath(storage_path('app')) ?: storage_path('app'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
         $abs = realpath($path) ?: $path;
         if (str_starts_with($abs, $root)) {
             return str_replace($root, '', $abs);

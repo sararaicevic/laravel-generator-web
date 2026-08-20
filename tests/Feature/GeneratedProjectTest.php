@@ -234,4 +234,31 @@ DSL);
 
         Bus::assertDispatchedSync(GenerateLaravelProject::class, fn (GenerateLaravelProject $job) => $job->projectId === $project->id);
     }
+
+    public function test_authenticated_user_can_download_project_with_absolute_zip_path(): void
+    {
+        $user = $this->createUser();
+        $project = GeneratedProject::query()->create([
+            'user_id' => $user->id,
+            'uuid' => '66666666-6666-6666-6666-666666666666',
+            'name' => 'Absolute Demo',
+            'status' => 'succeeded',
+        ]);
+
+        $zipPath = storage_path('app/generator/'.$project->uuid.'/project.zip');
+        if (!is_dir(dirname($zipPath))) {
+            mkdir(dirname($zipPath), 0775, true);
+        }
+        file_put_contents($zipPath, 'zip-content');
+
+        $project->forceFill([
+            'zip_path' => $zipPath,
+        ])->save();
+
+        $this
+            ->actingAs($user)
+            ->get(route('generator.download', $project))
+            ->assertOk()
+            ->assertDownload('absolute-demo.zip');
+    }
 }

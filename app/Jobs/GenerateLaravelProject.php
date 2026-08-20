@@ -124,6 +124,7 @@ class GenerateLaravelProject implements ShouldQueue
             if ($filePath === false) {
                 continue;
             }
+
             $rel = ltrim(str_replace($dir, '', $filePath), DIRECTORY_SEPARATOR);
             if ($file->isDir()) {
                 $zip->addEmptyDir($rel);
@@ -133,12 +134,13 @@ class GenerateLaravelProject implements ShouldQueue
         }
 
         $zip->close();
+
         return is_file($zipPath);
     }
 
     private function toStorageRelative(string $path): string
     {
-        $root = rtrim(storage_path('app'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+        $root = rtrim(realpath(storage_path('app')) ?: storage_path('app'), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
         $abs = realpath($path) ?: $path;
         if (str_starts_with($abs, $root)) {
             return str_replace($root, '', $abs);
