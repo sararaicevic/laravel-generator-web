@@ -84,7 +84,7 @@
                             </template>
 
                             <div class="space-y-2" x-show="entities.length > 0">
-                                <template x-for="(entity, index) in entities" :key="index">
+                                <template x-for="(entity, index) in entities" :key="entity._id || index">
                                     <button
                                         type="button"
                                         class="flex w-full items-center justify-between gap-3 rounded-md border px-3 py-3 text-left text-sm transition"
@@ -112,7 +112,7 @@
                             </div>
                         </template>
 
-                        <template x-if="selectedEntity">
+                        <template x-for="activeEntity in selectedEntity ? [selectedEntity] : []" :key="activeEntity._id">
                             <div class="divide-y divide-[#E2E8F0]">
                                 <div class="p-5">
                                     <div class="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] lg:items-end">
@@ -190,7 +190,7 @@
                                             <div></div>
                                         </div>
 
-                                        <template x-for="(field, fieldIndex) in selectedEntity.fields" :key="fieldIndex">
+                                        <template x-for="(field, fieldIndex) in selectedEntity.fields" :key="field._id || fieldIndex">
                                             <div class="grid gap-3 border-b border-[#E2E8F0] p-4 last:border-b-0 md:grid-cols-[minmax(160px,1fr)_150px_220px_44px] md:items-center">
                                                 <div>
                                                     <label class="mb-1 block text-xs font-medium text-[#64748B] md:hidden">Field Name</label>

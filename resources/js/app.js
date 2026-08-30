@@ -53,6 +53,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join('');
     };
+    const createEntityId = () => `entity_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const normalizeField = (field) => {
         const metadata = { ...(field.metadata || {}) };
         if (metadata.options !== undefined) {
@@ -97,6 +98,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
     };
 
     const normalizeEntities = (entities) => entities.map((entity, entityIndex) => ({
+        _id: entity._id || `entity_existing_${entityIndex}`,
         name: entity.name || '',
         display_field: entity.display_field || entity.displayField || '',
         features: normalizeFeatures(entity.features),
@@ -163,6 +165,7 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
 
         addEntity() {
             this.entities.push({
+                _id: createEntityId(),
                 name: '',
                 display_field: '',
                 features: defaultFeatures(),
