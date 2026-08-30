@@ -54,7 +54,7 @@ Navedeni radovi pokazuju da postoji osnova za automatizovano generisanje Laravel
 
 Istraživanja iz oblasti generisanja web aplikacija nijesu ograničena isključivo na klasične DSL i modelom vođene pristupe. Razvijaju se i rješenja usmjerena na modularnost, automatsku transformaciju specifikacija i upotrebu novih tehnologija za generisanje programskog koda.
 
-Mensah, Mensah i Dzahene-Quarshie razmatraju reaktivno generisanje koda u okviru modularnog web inženjerstva.¹⁰ Njihov pristup ukazuje na mogućnost povezivanja modularne strukture sistema i automatskog generisanja potrebnih aplikacionih elemenata. Modularnost je značajna jer omogućava da se pojedinačne funkcionalnosti sistema razvijaju i proširuju bez potrebe za izmjenom cjelokupne arhitekture.
+Mensah i saradnici razmatraju reaktivno generisanje koda u okviru modularnog web inženjerstva.¹⁰ Njihov pristup ukazuje na mogućnost povezivanja modularne strukture sistema i automatskog generisanja potrebnih aplikacionih elemenata. Modularnost je značajna jer omogućava da se pojedinačne funkcionalnosti sistema razvijaju i proširuju bez potrebe za izmjenom cjelokupne arhitekture.
 
 Noviji pristupi istražuju i povezivanje modelom vođenog razvoja sa modelima velikih jezika. Netz, Michael i Rumpe razmatraju mogućnost transformacije zahtjeva iskazanih prirodnim jezikom u modele na osnovu kojih se dalje mogu razvijati web aplikacije.¹² Ovakav pristup predstavlja dodatno podizanje nivoa apstrakcije, jer se početna specifikacija približava prirodnom načinu izražavanja korisničkih zahtjeva. Ipak, ovakvi sistemi uvode i dodatna pitanja u vezi sa preciznošću, jednoznačnošću i ponovljivošću generisanih rezultata.
 
