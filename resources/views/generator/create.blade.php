@@ -122,7 +122,7 @@
                                                 type="text"
                                                 class="ui-input mt-2 block w-full text-base"
                                                 placeholder="e.g. Product"
-                                                x-model="selectedEntity.name"
+                                                x-model="activeEntity.name"
                                                 @input="syncAllRelationships()"
                                                 required
                                             >
@@ -130,9 +130,15 @@
 
                                         <div class="min-w-0">
                                             <label class="ui-label">Display Field</label>
-                                            <select class="ui-select mt-2 block w-full text-base" x-model="selectedEntity.display_field">
+                                            <select
+                                                class="ui-select mt-2 block w-full text-base"
+                                                :value="activeEntity.display_field || ''"
+                                                x-init="$nextTick(() => syncSelectValue($el, activeEntity.display_field || ''))"
+                                                x-effect="activeEntity.fields.map((field) => cleanFieldName(field.name, '')).join('|'); $nextTick(() => syncSelectValue($el, activeEntity.display_field || ''))"
+                                                @change="activeEntity.display_field = $event.target.value"
+                                            >
                                                 <option value="">Auto: name, title, email, then ID</option>
-                                                <template x-for="field in selectedEntity.fields" :key="field._id">
+                                                <template x-for="field in activeEntity.fields" :key="field._id">
                                                     <option :value="cleanFieldName(field.name, '')" x-text="fieldLabel(field, 0)"></option>
                                                 </template>
                                             </select>
@@ -152,7 +158,7 @@
                                         <div class="flex flex-wrap gap-3">
                                             <template x-for="feature in featureOptions" :key="feature.key">
                                                 <label class="inline-flex items-center gap-2 rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-sm font-semibold text-[#1E293B]">
-                                                    <input type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" x-model="selectedEntity.features[feature.key]">
+                                                    <input type="checkbox" class="rounded border-[#CBD5E1] text-[#6366F1] shadow-sm focus:ring-[#6366F1]" x-model="activeEntity.features[feature.key]">
                                                     <span x-text="feature.label"></span>
                                                 </label>
                                             </template>
@@ -166,23 +172,23 @@
                                             <h3 class="font-semibold text-[#1E293B]">Fields</h3>
                                             <p class="text-xs text-[#64748B]">Field name, type, and validation rules</p>
                                         </div>
-                                        <button type="button" class="ui-button-secondary px-3 py-2" @click="addField(selectedEntity)">
+                                        <button type="button" class="ui-button-secondary px-3 py-2" @click="addField(activeEntity)">
                                             + Add Field
                                         </button>
                                     </div>
 
-                                    <template x-if="selectedEntity.fields.length === 0">
+                                    <template x-if="activeEntity.fields.length === 0">
                                         <button
                                             type="button"
                                             class="flex min-h-36 w-full flex-col items-center justify-center rounded-md border border-dashed border-[#CBD5E1] px-4 py-8 text-center transition hover:border-[#A5B4FC] hover:bg-[#EEF2FF]"
-                                            @click="addField(selectedEntity)"
+                                            @click="addField(activeEntity)"
                                         >
                                             <span class="text-sm font-semibold text-[#1E293B]">Add the first field</span>
                                             <span class="mt-1 text-sm text-[#64748B]">For example: name, title, price, email</span>
                                         </button>
                                     </template>
 
-                                    <div class="overflow-hidden rounded-md border border-[#E2E8F0]" x-show="selectedEntity.fields.length > 0">
+                                    <div class="overflow-hidden rounded-md border border-[#E2E8F0]" x-show="activeEntity.fields.length > 0">
                                         <div class="hidden grid-cols-[minmax(160px,1fr)_150px_220px_44px] gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-xs font-semibold uppercase text-[#64748B] md:grid">
                                             <div>Field Name</div>
                                             <div>Type</div>
@@ -190,7 +196,7 @@
                                             <div></div>
                                         </div>
 
-                                        <template x-for="(field, fieldIndex) in selectedEntity.fields" :key="field._id || fieldIndex">
+                                        <template x-for="(field, fieldIndex) in activeEntity.fields" :key="field._id || fieldIndex">
                                             <div class="grid gap-3 border-b border-[#E2E8F0] p-4 last:border-b-0 md:grid-cols-[minmax(160px,1fr)_150px_220px_44px] md:items-center">
                                                 <div>
                                                     <label class="mb-1 block text-xs font-medium text-[#64748B] md:hidden">Field Name</label>
@@ -205,7 +211,13 @@
 
                                                 <div>
                                                     <label class="mb-1 block text-xs font-medium text-[#64748B] md:hidden">Type</label>
-                                                    <select class="ui-select block w-full text-sm" x-model="field.type" @change="normalizeFieldRules(field)">
+                                                    <select
+                                                        class="ui-select block w-full text-sm"
+                                                        :value="field.type || 'string'"
+                                                        x-init="$nextTick(() => syncSelectValue($el, field.type || 'string'))"
+                                                        x-effect="$nextTick(() => syncSelectValue($el, field.type || 'string'))"
+                                                        @change="field.type = $event.target.value; normalizeFieldRules(field)"
+                                                    >
                                                         <template x-for="type in fieldTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
                                                         </template>
@@ -231,7 +243,7 @@
                                                     type="button"
                                                     class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50"
                                                     title="Remove field"
-                                                    @click="removeField(selectedEntity, fieldIndex)"
+                                                    @click="removeField(activeEntity, fieldIndex)"
                                                 >
                                                     X
                                                 </button>
@@ -390,7 +402,7 @@
                                             type="button"
                                             class="ui-button-secondary px-3 py-2"
                                             :disabled="availableRelationTargets.length === 0"
-                                            @click="addRelation(selectedEntity)"
+                                            @click="addRelation(activeEntity)"
                                         >
                                             + Add Relationship
                                         </button>
@@ -402,8 +414,8 @@
                                         </div>
                                     </template>
 
-                                    <div class="space-y-3" x-show="relationshipRows(selectedEntity, selectedEntityIndex).length > 0">
-                                        <template x-for="(relation, relationIndex) in relationshipRows(selectedEntity, selectedEntityIndex)" :key="relation._id || relationIndex">
+                                    <div class="space-y-3" x-show="relationshipRows(activeEntity, selectedEntityIndex).length > 0">
+                                        <template x-for="(relation, relationIndex) in relationshipRows(activeEntity, selectedEntityIndex)" :key="relation._id || relationIndex">
                                             <div class="grid gap-3 rounded-md border border-[#E2E8F0] p-4 md:grid-cols-[180px_minmax(180px,1fr)_minmax(180px,1fr)_44px] md:items-center">
                                                 <template x-if="relation._managedInverse">
                                                     <div class="md:col-span-4">
@@ -424,7 +436,7 @@
                                                                 type="button"
                                                                 class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50"
                                                                 title="Remove relationship pair"
-                                                                @click="removeRelation(selectedEntity, relationIndex, relation)"
+                                                                @click="removeRelation(activeEntity, relationIndex, relation)"
                                                             >
                                                                 X
                                                             </button>
@@ -444,8 +456,10 @@
                                                     </div>
                                                     <select
                                                         class="ui-select block w-full text-sm"
-                                                        x-model="relation.type"
-                                                        @change="updateRelationshipType(selectedEntity, selectedEntityIndex, relation, $event.target.value)"
+                                                        :value="relation.type || 'belongsTo'"
+                                                        x-init="$nextTick(() => syncSelectValue($el, relation.type || 'belongsTo'))"
+                                                        x-effect="$nextTick(() => syncSelectValue($el, relation.type || 'belongsTo'))"
+                                                        @change="updateRelationshipType(activeEntity, selectedEntityIndex, relation, $event.target.value)"
                                                     >
                                                         <template x-for="type in relationTypes" :key="type">
                                                             <option :value="type" x-text="type"></option>
@@ -460,8 +474,9 @@
                                                     <select
                                                         class="ui-select block w-full text-sm"
                                                         :value="relation.target || ''"
-                                                        x-effect="$el.value = relation.target || ''"
-                                                        @change="updateRelationshipTarget(selectedEntity, selectedEntityIndex, relation, $event.target.value)"
+                                                        x-init="$nextTick(() => syncSelectValue($el, relation.target || ''))"
+                                                        x-effect="relationTargetOptions(relation).map((target) => target.name).join('|'); $nextTick(() => syncSelectValue($el, relation.target || ''))"
+                                                        @change="updateRelationshipTarget(activeEntity, selectedEntityIndex, relation, $event.target.value)"
                                                     >
                                                         <option value="" :selected="!relation.target">Choose model</option>
                                                         <template x-for="target in relationTargetOptions(relation)" :key="target.name">
@@ -491,7 +506,7 @@
                                                         type="button"
                                                         class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-semibold text-red-500 transition hover:bg-red-50 md:mt-5"
                                                         title="Remove relationship"
-                                                        @click="removeRelation(selectedEntity, relationIndex, relation)"
+                                                        @click="removeRelation(activeEntity, relationIndex, relation)"
                                                     >
                                                         X
                                                     </button>

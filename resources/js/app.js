@@ -719,6 +719,14 @@ window.generatorBuilder = function generatorBuilder(config = {}) {
             return relation._managedInverse ? 'Auto-added inverse relationship' : 'Direct relationship';
         },
 
+        syncSelectValue(select, value) {
+            if (!select) {
+                return;
+            }
+
+            select.value = value ?? '';
+        },
+
         defaultPivotTable(source, target) {
             if (!source || !target) {
                 return '';
